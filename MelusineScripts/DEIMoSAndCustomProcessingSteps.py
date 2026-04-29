@@ -1070,8 +1070,8 @@ def PeakMergingSteps(drifts_gapfilled):
     #--> remove features/rows where the CCS values are negative
     drifts_gapfilled = drifts_gapfilled.drop(drifts_gapfilled.index[drifts_gapfilled['CCS'] < 0])
 
-    #Sort the data by m/z, RT, and CCS
-    drifts_gapfilled = drifts_gapfilled.sort_values(['mzs', 'RTs', 'CCS'], ascending=[True, True, True])
+    #Sort the data by m/z
+    drifts_gapfilled = drifts_gapfilled.sort_values(['mzs'], ascending=[True])
     drifts_gapfilled = drifts_gapfilled.reset_index(drop=True)
     #Add the reset index as a column for downstream joining
     drifts_gapfilled = drifts_gapfilled.reset_index()
@@ -1080,174 +1080,105 @@ def PeakMergingSteps(drifts_gapfilled):
 
     ##Split into m/z groups
     mz_bin = []
-    dataframes = []
     for mz_val in list(drifts_gapfilled['mzs']):
         # print(mz_val)
         #Calculate uncertainty
         uncertainty = round((mz_val/1000000)*PeakMerge_mz_ppm,4)
         max_val_mz = round(mz_val+uncertainty,4)
         min_val_mz = round(mz_val-uncertainty,4)
-        #Only add new value if it is increasing in value to the previous item added to the list
-        if mz_bin == []:
-            mz_bin.append(min_val_mz)
+        #Only add NEW value if it is increasing in value to the previous item added to the list
+        if mz_bin == []: #if list empty, add first value
             mz_bin.append(max_val_mz)
         else:
-            if min_val_mz > mz_bin[-1]:
-                mz_bin.append(min_val_mz)
-            else:
-                pass
-            if max_val_mz == mz_bin[-1]:
-                pass
-            else:
-                mz_bin.append(max_val_mz)
+            if min_val_mz > mz_bin[-1]: #Check if the new feature's m/z is outwith the ppm range of the previous one
+                mz_bin.append(max_val_mz) #If out of range: add new upper limit to check against the next m/z
+            else: #if not: just "duplicate" the current limit to check against the next m/z
+                mz_bin.append(mz_bin[-1])
                 
-    mz_bin[0] = mz_bin[0]-0.001
-    label_list = [*range(0, len(mz_bin), 1)]
-    mz_clusters = pd.cut(drifts_gapfilled['mzs'], 
-                         mz_bin, 
-                         labels = label_list[1:]
-                         )
-    mz_clusters = pd.DataFrame(mz_clusters).rename(columns={'mzs':'mz_bin'})
-    mz_clusters = mz_clusters.reset_index(drop=True)
-    mz_clusters = pd.concat([drifts_gapfilled.reset_index(drop=True), mz_clusters['mz_bin']], axis = 1)
-    # print(mz_clusters[['ID', 'm/z', 'RT', 'CCS', 'mz_bin']][0:10])
-
-    if mz_clusters.columns.str.startswith('mz_bin').sum() > 1:
-        mz_clusters = mz_clusters.iloc[:, :-1]
-        
-    mz_clusters = mz_clusters.groupby('mz_bin', observed = True) #observed = True added to remove FutureWarning message
-    inter_list = [group for _, group in mz_clusters]
-
-    for item in inter_list:
-        dataframes.append(item)
-        
-    for i in range(len(dataframes)-1, 0, -1):
-        if dataframes[i].empty:
-            del dataframes[i]
+    drifts_gapfilled['mz_bin'] = mz_bin
+    
+    mz_clusters = drifts_gapfilled.groupby('mz_bin', observed = True) #observed = True added to remove FutureWarning message
+    #Keep the dataframe from each group in a new list from the groupby object
+    mz_clusters = [g.copy() for _, g in mz_clusters]
             
     ##Split m/z groups into further RT groups
     mzRT_dataframes = list()
 
     #Loop through each m/z group + separate by RT groups
-    for table in dataframes:
+    for table in mz_clusters:
         table = pd.DataFrame(table)
-        table = table.reset_index(drop=True)
+        table = table.sort_values(['RTs'], ascending=[True])
         
-        # Drop m/z column from df_raw to prevent weird change to m/z column name
-        # Join the corresponding columns by index (there are duplicate m/z values)
-        # table = table.merge(df_raw.drop('m/z', axis=1), on='index')
-        table = table.sort_values(['mzs', 'RTs'], ascending=[True, True])
-        table = table.reset_index(drop=True)
-        # Undo the automatic index resetting that occurs with pd.merge
-        table = table.set_index(['index'], drop = True)
-        # Group by RT within each m/z group
-        max_val_RT = table['RTs'].max()
-        min_val_RT = table['RTs'].min()
-        #Cannot calculate range with floats
-        # --> RT values multiplied by 1000 for range calcs + divided by 1000 back to normal
-        bins = list([x / 1000 for x in range(int(min_val_RT*1000), int(max_val_RT*1000), int(PeakMerge_RT_tol*1000))])
-        if bins == []:
-            pass
-        else:
-            #Take 0.001 away to prevent the minimum RT value being put in a separate bin in certain cases
-            bins[0] = bins[0]-0.001
-        #Add max and min values to bin ranges --> allows pd.cut to work properly
-        bins.append(min_val_RT-PeakMerge_RT_tol)
-        bins.append(max_val_RT+PeakMerge_RT_tol)
-        bins.sort()
-        #Create label_list for RT bin groups (easier to read)
-        label_list = [*range(0, len(bins), 1)]
-        clusters = pd.cut(table['RTs'],
-                          bins,
-                          labels=label_list[1:]
-                          )
-        clusters = pd.DataFrame(clusters).rename(columns={'RTs':'RT_bins'})
-        clusters = clusters.reset_index()
-        clusters = clusters.merge(drifts_gapfilled_raw, on='index')
-        clusters = clusters.groupby('RT_bins', observed = True) #observed = True added to remove FutureWarning message
-        #Create list of RT dataframes for each m/z group
-        inter_list = [group for _, group in clusters]
-        #clusters = clusters.merge(df_raw.drop(' m/z', axis=1), on='index')
-        for item in inter_list:
-            #Remove empty dataframes (unsure why these are put in in the first place)
-            if item.empty:
-                pass
+        ##Split each m/z group into RT groups
+        RT_bin = []
+        for RT_val in list(table['RTs']):
+
+            #Calculate uncertainty tolerance
+            max_val_RT = RT_val+RT_tol
+            min_val_RT = RT_val-RT_tol
+                
+            #Only add NEW value if it is increasing in value to the previous item added to the list
+            if RT_bin == []: #if list empty, add first value
+                RT_bin.append(max_val_RT)
             else:
-                mzRT_dataframes.append(item)
-            
-    ##Split m/z/RT groups into further CCS groups
+                if min_val_RT > RT_bin[-1]: #Check if the new feature's RT is outwith the RT range of the previous one
+                    RT_bin.append(max_val_RT) #If out of range: add new upper limit to check against the next RT
+                else: #if not: just "duplicate" the current limit to check against the next RT
+                    RT_bin.append(RT_bin[-1])
+                    
+        table['RT_bin'] = RT_bin
+        
+        RT_clusters = table.groupby('RT_bin', observed = True)
+        
+        #Add each m/z-RT group individually to the new list
+        for mzRT_group in RT_clusters:
+            mzRT_dataframes.append(mzRT_group)
+        
+    #Keep the dataframe from each group in a new list from the groupby object
+    mzRT_dataframes = [g.copy() for _, g in mzRT_dataframes]
+
+    #Loop through each m/z/RT group + separate by CCS groups
     mzRTCCS_dataframes = list()
 
     #Loop through each m/z/RT group + separate by CCS groups
     for table in mzRT_dataframes:
-        if table.empty:
-            pass
-        else:
-            #Cluster by %CCS 
-            # print("%CCS Development")
-            table = pd.DataFrame(table)
-            table = table.reset_index()
-            #Remove level_0 column 
-            table = table.drop("level_0", axis = 1)
-            table = table.sort_values(['CCS'], ascending=[True])
-            table = table.reset_index(drop=True)
-            bins = []
-            for CCS_val in list(table["CCS"]):
-                #Calculate %CCS
-                PercCCS = (CCS_val/100)*PeakMerge_CCS_tol
-                max_val_ccs = round(CCS_val + PercCCS, 2)
-                min_val_ccs = round(CCS_val - PercCCS, 2)
-                #Only add new value if it is increasing in value to the previous item added to the list
-                if bins==[]:
-                    bins.append(min_val_ccs)
-                    bins.append(max_val_ccs)
-                else:
-                    if min_val_ccs > bins[-1]:
-                        bins.append(min_val_ccs)
-                    else:
-                        pass
-                    if max_val_ccs == bins[-1]: #Occassionally get duplicate CCS values
-                        pass
-                    else:
-                        bins.append(max_val_ccs)
-            if bins == []:
-                pass
-            else:
-                #Take 0.001 away to prevent the minimum RT value being put in a separate bin in certain cases
-                bins[0] = bins[0]-0.001
-            #Create label_list for CCS bin groups (easier to read)
-            label_list = [*range(0, len(bins), 1)]
-            clusters = pd.cut(table['CCS'],
-                              bins,
-                              labels=label_list[1:]
-                              )
-            clusters = pd.DataFrame(clusters).rename(columns={'CCS':'CCS_bins'})
-            clusters = clusters.reset_index()
-            clusters = pd.concat([table, clusters['CCS_bins']], axis = 1)
-            #For some reason, the final df in the loop will add a duplicate CCS_bins columns
-            # This interferes with the groupby function --> need to remove duplicate
-            if clusters.columns.str.startswith('CCS_bins').sum() > 1:
-                #The duplicate column is added to the end of the df
-                # --> delete the final column only if there is > 1
-                clusters = clusters.iloc[:, :-1]    
-            clusters = clusters.groupby('CCS_bins', observed = True) #observed = True added to remove FutureWarning message
-            #Create list of CCS dataframes for each m/z/RT group
-            inter_list = [group for _, group in clusters]
-            #clusters = clusters.merge(df_raw.drop(' m/z', axis=1), on='index')
-            for item in inter_list:
-                # print(item[["RT", "m/z", "CCS"]])
-                mzRTCCS_dataframes.append(item)
+        table = pd.DataFrame(table)
+        table = table.sort_values(['CCS'], ascending=[True])
         
-    #Remove empty dataframes (unsure why these are put in in the first place)
-    for i in range(len(mzRTCCS_dataframes)-1, 0, -1):
-        if mzRTCCS_dataframes[i].empty:
-            del mzRTCCS_dataframes[i]
+        ##Split each m/z group into RT groups
+        CCS_bin = []
+        for CCS_val in list(table['CCS']):
+            
+            #Calculate uncertainty tolerance
+            uncertainty_CCS = (CCS_val/100)*CCS_tol
+            max_val_CCS = CCS_val + uncertainty_CCS
+            min_val_CCS = CCS_val - uncertainty_CCS
+                
+            #Only add NEW value if it is increasing in value to the previous item added to the list
+            if CCS_bin == []: #if list empty, add first value
+                CCS_bin.append(max_val_CCS)
+            else:
+                if min_val_CCS > CCS_bin[-1]: #Check if the new feature's CCS is outwith the CCS range of the previous one
+                    CCS_bin.append(max_val_CCS) #If out of range: add new upper limit to check against the next CCS
+                else: #if not: just "duplicate" the current limit to check against the next CCS
+                    CCS_bin.append(CCS_bin[-1])
+                    
+        table['CCS_bin'] = CCS_bin
+        
+        CCS_clusters = table.groupby('CCS_bin', observed = True)
+        
+        #Add each m/z-RT group individually to the new list
+        for mzRTCCS_group in CCS_clusters:
+            mzRTCCS_dataframes.append(mzRTCCS_group)
+        
+    #Keep the dataframe from each group in a new list from the groupby object
+    mzRTCCS_dataframes = [g.copy() for _, g in mzRTCCS_dataframes]
 
     ##Sum rows + prepare final version of data
     colnames = mzRTCCS_dataframes[0].columns
     # print(colnames)
 
-    non_samples = ['index', 'RT_bins', 'mzs', 'RTs', 'drifts', 'ids', 'CCS', 'CCS_bins']
+    non_samples = ['index', 'RT_bins', 'mzs', 'RTs', 'drifts', 'ids', 'CCS', 'CCS_bin', 'mz_bin']
     samples = [header for header in colnames if header not in non_samples]
 
     #Loop through each mz+RT+CCS group + sum intensities across samples + add to final dataframe
@@ -1291,7 +1222,7 @@ def PeakMergingSteps(drifts_gapfilled):
     
 def MinimumDetectionThresholdSteps(PeakMerged_dataframe):
     #IMPORTANT
-    #1) Run the 20250327_AssignSampleGroupings.py file (only needs to be done once)
+    #1) Run the AssignSampleGroupings.py file (only needs to be done once)
     #2) Fill in the Group column (and SAVE it!)
     #3) Update the file name read in for the df_sample_groups object
 
