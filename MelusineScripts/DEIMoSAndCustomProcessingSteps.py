@@ -1,17 +1,17 @@
-#Script to run through the DEIMoS commands for all .h5 files in a directory
+#Script to run through the DEIMoS and custom commands for all .h5 files in a directory
 #Adapted into discrete functions from the 20240503_LoopThroughHD5Files_DataProcessingOnly.py script
 #Author: Jessica O'Loughlin (s1907024@ed.ac.uk)
 #Supervisor: Prof. Karl Burgess (k.burgess@ed.ac.uk)
 #Created: 08/11/2024
 
 import glob #Searches for files with specific extensions
-import deimos #Performs various Mass Spec Processing Steps
+# import deimos #Performs various Mass Spec Processing Steps
 import numpy as np #Basic math functionalities
 import matplotlib.pyplot as plt #Create plot outputs
 import os #Allows directory to be read
 import os.path #Checks for existance of files
 import shutil #Will remove specific folders if they are already present
-import time #Find the creation date of files 
+# import time #Find the creation date of files 
 import pandas as pd #Handle dataframes
 from numpy import trapz #Calculate area under line for Gap Filling
 from datetime import datetime #Get current date and time
@@ -209,10 +209,14 @@ if __name__ == "__main__":
             shutil.rmtree('Results/{}'.format(file_NoExt))
         os.makedirs('Results/{}'.format(file_NoExt))
         
-        #DEIMoSFunctions.RetentionTimeAlignment(file_NoExt, rtalign_data, middle)
+        DEIMoSFunctions.RetentionTimeAlignment(file_NoExt, rtalign_data, middle, rtalign_persisHomology_thres, 
+                                               rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
+                                               rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol)
         #print("RetentionTimeAlignment() complete")
         
-        ms1, ms1_peaks, ms2, ms2_peaks, ms1_iso = DEIMoSFunctions.DetectPeaks(file_NoExt)
+        ms1, ms1_peaks, ms2, ms2_peaks, ms1_iso = DEIMoSFunctions.DetectPeaks(file_NoExt, PeakDet_intensity_thres, 
+                                                                              PeakDet_smooth_data_radius, 
+                                                                              PeakDet_persistent_homology_radius)
         print("DetectPeaks() complete")
 
         #del [factors, index, ms1_thres500, ms2_thres500]

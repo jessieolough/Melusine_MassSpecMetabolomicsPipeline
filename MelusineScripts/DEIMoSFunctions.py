@@ -54,7 +54,6 @@ def FindMiddleFileForRTAlignment():
     
     return middle, rtalign_data
 
-    
 def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol):
     tune_pos = deimos.load(f'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
     print(tune_pos)
@@ -69,7 +68,9 @@ def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, cc
     
     return ccs_cal_pos
 
-def RetentionTimeAlignment(file_NoExt, rtalign_data, middle):
+def RetentionTimeAlignment(file_NoExt, rtalign_data, middle, rtalign_persisHomology_thres, 
+                           rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
+                           rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol):
     
     #Make a folder for this sample for all Peak Detection results to go in to
     if os.path.exists('Results/{}/RetentionTimeAlignmentAndPeakDetection'.format(file_NoExt)):
@@ -127,50 +128,56 @@ def RetentionTimeAlignment(file_NoExt, rtalign_data, middle):
         
         # Perform peak detection
         peaks = {}
-        peaks['toAlign_ms1'] = deimos.peakpick.persistent_homology(deimos.threshold(rtalign_data['toAlign_ms1'], threshold=128),
+        peaks['toAlign_ms1'] = deimos.peakpick.persistent_homology(deimos.threshold(rtalign_data['toAlign_ms1'], 
+                                                                                    threshold=rtalign_persisHomology_thres),
                                                          dims=['mz', 'drift_time', 'retention_time'])
-        peaks['ref_ms1'] = deimos.peakpick.persistent_homology(deimos.threshold(rtalign_data['ref_ms1'], threshold=128),
+        peaks['ref_ms1'] = deimos.peakpick.persistent_homology(deimos.threshold(rtalign_data['ref_ms1'], 
+                                                                                threshold=rtalign_persisHomology_thres),
                                                          dims=['mz', 'drift_time', 'retention_time'])
-        peaks['toAlign_ms2'] = deimos.peakpick.persistent_homology(deimos.threshold(rtalign_data['toAlign_ms2'], threshold=128),
+        peaks['toAlign_ms2'] = deimos.peakpick.persistent_homology(deimos.threshold(rtalign_data['toAlign_ms2'], 
+                                                                                    threshold=rtalign_persisHomology_thres),
                                                          dims=['mz', 'drift_time', 'retention_time'])
-        peaks['ref_ms2'] = deimos.peakpick.persistent_homology(deimos.threshold(rtalign_data['ref_ms2'], threshold=128),
+        peaks['ref_ms2'] = deimos.peakpick.persistent_homology(deimos.threshold(rtalign_data['ref_ms2'], 
+                                                                                threshold=rtalign_persisHomology_thres),
                                                          dims=['mz', 'drift_time', 'retention_time'])
         # Downselect by persistence
         peaks['toAlign_ms1']['persistence_ratio'] = peaks['toAlign_ms1']['persistence'] / peaks['toAlign_ms1']['intensity']
-        peaks['toAlign_ms1'] = deimos.threshold(peaks['toAlign_ms1'], by='persistence_ratio', threshold=0.75)
+        peaks['toAlign_ms1'] = deimos.threshold(peaks['toAlign_ms1'], by='persistence_ratio', threshold=rtalign_persis_thres)
         
         peaks['ref_ms1']['persistence_ratio'] = peaks['ref_ms1']['persistence'] / peaks['ref_ms1']['intensity']
-        peaks['ref_ms1'] = deimos.threshold(peaks['ref_ms1'], by='persistence_ratio', threshold=0.75)
+        peaks['ref_ms1'] = deimos.threshold(peaks['ref_ms1'], by='persistence_ratio', threshold=rtalign_persis_thres)
         
         peaks['toAlign_ms2']['persistence_ratio'] = peaks['toAlign_ms2']['persistence'] / peaks['toAlign_ms2']['intensity']
-        peaks['toAlign_ms2'] = deimos.threshold(peaks['toAlign_ms2'], by='persistence_ratio', threshold=0.75)
+        peaks['toAlign_ms2'] = deimos.threshold(peaks['toAlign_ms2'], by='persistence_ratio', threshold=rtalign_persis_thres)
         
         peaks['ref_ms2']['persistence_ratio'] = peaks['ref_ms2']['persistence'] / peaks['ref_ms2']['intensity']
-        peaks['ref_ms2'] = deimos.threshold(peaks['ref_ms2'], by='persistence_ratio', threshold=0.75)
+        peaks['ref_ms2'] = deimos.threshold(peaks['ref_ms2'], by='persistence_ratio', threshold=rtalign_persis_thres)
         
         # Partition
         partitions_toAlign_ms1 = deimos.partition(deimos.threshold(peaks['toAlign_ms1'], 
-                                                                   threshold=1E3),
+                                                                   threshold=rtalign_partition_thres),
                                                   split_on='mz',
-                                                  size=1000,
-                                                  overlap=0.25)
+                                                  size=rtalign_partition_size,
+                                                  overlap=rtalign_partition_overlap)
         partitions_toAlign_ms2 = deimos.partition(deimos.threshold(peaks['toAlign_ms2'], 
-                                                                   threshold=1E3),
+                                                                   threshold=rtalign_partition_thres),
                                                   split_on='mz',
-                                                  size=1000,
-                                                  overlap=0.25)
+                                                  size=rtalign_partition_size,
+                                                  overlap=rtalign_partition_overlap)
         # Match
         toAlign_ms1_matched, ref_ms1_matched = partitions_toAlign_ms1.zipmap(deimos.alignment.match, 
                                                                              deimos.threshold(peaks['ref_ms1'], 
-                                                                                              threshold=1E3),
+                                                                                              threshold=rtalign_zipmap_thres),
                                                                              dims=['mz', 'drift_time', 'retention_time'],
-                                                                             tol=[20E-6, 0.03, 2], relative=[True, True, False],
+                                                                             tol=rtalign_zipmap_mz_dt_rt_tol, 
+                                                                             relative=[True, True, False],
                                                                              processes=4)
         toAlign_ms2_matched, ref_ms2_matched = partitions_toAlign_ms2.zipmap(deimos.alignment.match, 
                                                                              deimos.threshold(peaks['ref_ms2'], 
-                                                                                              threshold=1E3),
+                                                                                              threshold=rtalign_zipmap_thres),
                                                                              dims=['mz', 'drift_time', 'retention_time'],
-                                                                             tol=[20E-6, 0.03, 2], relative=[True, True, False],
+                                                                             tol=rtalign_zipmap_mz_dt_rt_tol, 
+                                                                             relative=[True, True, False],
                                                                              processes=4)
         
         # Visualize
