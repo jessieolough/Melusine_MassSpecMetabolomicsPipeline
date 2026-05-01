@@ -56,7 +56,7 @@ def FindMiddleFileForRTAlignment():
 
     
 def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol):
-    tune_pos = deimos.load(tune_pos_file, key='ms1')
+    tune_pos = deimos.load(f'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
     print(tune_pos)
     ccs_cal_pos = deimos.calibration.tunemix(tune_pos,
                                               mz=ccsCalib_mz,

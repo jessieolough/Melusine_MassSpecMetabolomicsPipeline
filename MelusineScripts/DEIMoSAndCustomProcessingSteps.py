@@ -138,7 +138,7 @@ MergeMS2_RT_tol = 0.5 #Time in minutes
 MergeMS2_DT_tol = 2.0 #Percentage
 
 def ReadFilesInDirectory():
-    path = r'*.h5'
+    path = r'f:\JessicaOLoughlin\RawDataMZMLFiles\*.h5'
     #Create a list of the files with the .h5 extension
     files = glob.glob(path)
     #Can check that it has the correct number of files
@@ -180,8 +180,8 @@ if __name__ == "__main__":
     files = ReadFilesInDirectory()
     print("ReadFilesInDirectory() complete")
     
-    middle, rtalign_data = DEIMoSFunctions.FindMiddleFileForRTAlignment()
-    print("FindMiddleFileForRTAlignment() complete")
+    #middle, rtalign_data = DEIMoSFunctions.FindMiddleFileForRTAlignment()
+    #print("FindMiddleFileForRTAlignment() complete")
     
     #del [CreationTime, file, Created, middle_row]
     
@@ -209,8 +209,8 @@ if __name__ == "__main__":
             shutil.rmtree('Results/{}'.format(file_NoExt))
         os.makedirs('Results/{}'.format(file_NoExt))
         
-        DEIMoSFunctions.RetentionTimeAlignment(file_NoExt, rtalign_data, middle)
-        print("RetentionTimeAlignment() complete")
+        #DEIMoSFunctions.RetentionTimeAlignment(file_NoExt, rtalign_data, middle)
+        #print("RetentionTimeAlignment() complete")
         
         ms1, ms1_peaks, ms2, ms2_peaks, ms1_iso = DEIMoSFunctions.DetectPeaks(file_NoExt)
         print("DetectPeaks() complete")
