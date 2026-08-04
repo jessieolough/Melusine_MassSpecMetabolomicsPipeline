@@ -20,7 +20,7 @@ import warnings
 # Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
     
-def FindMiddleFileForRTAlignment():
+def FindMiddleFileForRTAlignment(working_directory):
     #Find the file in the middle of the LC-IM-QTOF run to align other files to downstream
     CreationTime = []
     #Read through files in specified directory
@@ -64,7 +64,7 @@ def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, cc
                                               buffer_mass=ccsCalib_buffer_mass, 
                                               mz_tol=ccsCalib_mz_tol, 
                                               dt_tol=ccsCalib_dt_tol)
-    print('r-squared:\t', ccs_cal_pos.fit['r'] ** 2)
+    print('r-squared:\t', ccs_cal_pos.fit['r'] ** 2) #type: ignore
     
     return ccs_cal_pos
 
@@ -165,7 +165,7 @@ def RetentionTimeAlignment(file_NoExt, rtalign_data, middle, rtalign_persisHomol
                                                   size=rtalign_partition_size,
                                                   overlap=rtalign_partition_overlap)
         # Match
-        toAlign_ms1_matched, ref_ms1_matched = partitions_toAlign_ms1.zipmap(deimos.alignment.match, 
+        toAlign_ms1_matched, ref_ms1_matched = partitions_toAlign_ms1.zipmap(deimos.alignment.match, #type: ignore
                                                                              deimos.threshold(peaks['ref_ms1'], 
                                                                                               threshold=rtalign_zipmap_thres),
                                                                              dims=['mz', 'drift_time', 'retention_time'],
@@ -396,7 +396,7 @@ def DetectIsotopes(ms1_peaks, isotope_intensity_thres, isotope_partition_size, i
                                   high = row['mz']+isotope_slice_mz_high)
         
         # Get maximal data point
-        scan_id_i, rt_i, dt_i, mz_i, intensity_i = ms1_iso_ss.loc[ms1_iso_ss['intensity'] == ms1_iso_ss['intensity'].max(), :].round(1).values[0]
+        scan_id_i, rt_i, dt_i, mz_i, intensity_i = ms1_iso_ss.loc[ms1_iso_ss['intensity'] == ms1_iso_ss['intensity'].max(), :].round(1).values[0] #type: ignore
     
         #The ms1_iso data is loaded in the Peak Detection section
         feature = deimos.slice(ms1_iso_ss, by=['mz', 'drift_time', 'retention_time'],
@@ -594,8 +594,8 @@ def AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_me
                                             tol=agglo_mergeFeatures_mz_dt_rt_tol,
                                             relative = [True, True, False])                                                        
     # next bit is sort of cheating. Fake up a multi-file dataframe by adding the filename and loopcounter as columns
-    merged_peaks.insert(0, 'sample_idx', loopcount)
-    merged_peaks.insert(0, 'sample_id', file_NoExt)
+    merged_peaks.insert(0, 'sample_idx', loopcount)#type: ignore
+    merged_peaks.insert(0, 'sample_id', file_NoExt)#type: ignore
     
     # main bit of work - concatenate the dataframe with the new peak data.
     multipeaks = pd.concat([multipeaks, merged_peaks])
@@ -692,7 +692,7 @@ def CCSCalibrationSteps(ccs_cal_pos, clustering):
     #how to get rid of a column in a multilevel table
     #full_pivot = full_pivot.drop([('mz', 'mzs')], axis=1)
     #ok - calculate the per row means for all of the mzs
-    mzs = full_pivot[('mz',)].mean(axis=1)
+    mzs = full_pivot[('mz',)].mean(axis=1)#type: ignore
     print(full_pivot[('mz',)])
     print("mzs = full_pivot completed")
     print(mzs)
@@ -701,22 +701,22 @@ def CCSCalibrationSteps(ccs_cal_pos, clustering):
     mz_stripped = full_pivot.drop([('mz',)], axis = 1)
     #add to the multiindex
     mz_stripped[('mz', 'mzs')] = mzs
-    del [full_pivot, mzs]
+    del [full_pivot, mzs]#type: ignore
 
     #now do the same for the retention times
     # mz_stripped.to_csv('Results/mz_stripped.csv', index=False)
-    rts = mz_stripped[('retention_time',)].mean(axis=1)
+    rts = mz_stripped[('retention_time',)].mean(axis=1)#type: ignore
     rts_stripped = mz_stripped.drop([('retention_time',)], axis = 1)
     rts_stripped[('retention_time', 'RTs')] = rts
-    del [mz_stripped, rts]
+    del [mz_stripped, rts]#type: ignore
 
     #now we do the same for the drift times 
-    drifts = rts_stripped[('drift_time',)].mean(axis=1)
+    drifts = rts_stripped[('drift_time',)].mean(axis=1)#type: ignore
     drifts_stripped = rts_stripped.drop([('drift_time',)], axis = 1)
     #currently commented out as unused, also shouldn't this be CCS values?
     #Update from Jess: Yes! I have put this back in so that the CCS values can be calculated
     drifts_stripped[('drift_time', 'drifts')] = drifts
-    del [rts_stripped, drifts]
+    del [rts_stripped, drifts]#type: ignore
     # drifts_stripped.to_csv('Results/drifts_stripped.csv', index=False)
     print("dataset stripping steps completed")
     

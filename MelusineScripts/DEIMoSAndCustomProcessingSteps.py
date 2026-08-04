@@ -27,6 +27,8 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 print("Script loop")
 
 ##Set thresholds for different processes
+#Working directory (where the raw files are)
+working_directory = r"F:\JessicaOLoughlin\RawDataAgilentFiles"
 #Reading in files
 calib_files = ['POS_Precondition2.h5', 'POS_Precondition3.h5', 'POS_Precondition4.h5', 
                'POS_Precondition5.h5', 'POS_CCS0.h5', 'POS_CCS1.h5', 'POS_CCS2.h5', 
@@ -138,7 +140,11 @@ MergeMS2_RT_tol = 0.5 #Time in minutes
 MergeMS2_DT_tol = 2.0 #Percentage
 
 def ReadFilesInDirectory():
-    path = r'f:\JessicaOLoughlin\RawDataMZMLFiles\*.h5'
+
+    os.chdir(r"f:\JessicaOLoughlin\RawDataMZMLFiles")
+
+    # path = r'f:\JessicaOLoughlin\RawDataMZMLFiles\*.h5'
+    path = r'*.h5'
     #Create a list of the files with the .h5 extension
     files = glob.glob(path)
     #Can check that it has the correct number of files
@@ -180,7 +186,7 @@ if __name__ == "__main__":
     files = ReadFilesInDirectory()
     print("ReadFilesInDirectory() complete")
     
-    #middle, rtalign_data = DEIMoSFunctions.FindMiddleFileForRTAlignment()
+    middle, rtalign_data = DEIMoSFunctions.FindMiddleFileForRTAlignment(working_directory)
     #print("FindMiddleFileForRTAlignment() complete")
     
     #del [CreationTime, file, Created, middle_row]
