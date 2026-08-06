@@ -20,7 +20,7 @@ import warnings
 # Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
     
-def FindMiddleFileForRTAlignment(working_directory):
+def FindMiddleFileForRTAlignment():
     #Find the file in the middle of the LC-IM-QTOF run to align other files to downstream
     CreationTime = []
     #Read through files in specified directory
@@ -41,7 +41,7 @@ def FindMiddleFileForRTAlignment(working_directory):
     middle = CreationTime.loc[middle_row]
     middle = middle['File']
     middle = middle.replace(".d", "")
-    middle = "RTAligned_{}".format(middle)
+    # middle = "RTAligned_{}".format(middle)
     
     print("middle = ", middle)
     
@@ -51,6 +51,10 @@ def FindMiddleFileForRTAlignment(working_directory):
     rtalign_data['ref_ms1'] = rtalign_data['ref_ms1'].apply(pd.to_numeric, errors = "ignore")
     rtalign_data['ref_ms2'] = deimos.load('{}.h5'.format(middle), key='ms2')
     rtalign_data['ref_ms2'] = rtalign_data['ref_ms2'].apply(pd.to_numeric, errors = "ignore")
+
+    #Just save the middle/reference file as it is
+    deimos.save('Results/RTAligned_{}.h5'.format(middle), rtalign_data['ref_ms1'], key='ms1')
+    deimos.save('Results/RTAligned_{}.h5'.format(middle), rtalign_data['ref_ms2'], key='ms2')
     
     return middle, rtalign_data
 
@@ -76,55 +80,52 @@ def RetentionTimeAlignment(file_NoExt, rtalign_data, middle, rtalign_persisHomol
     if os.path.exists('Results/{}/RetentionTimeAlignmentAndPeakDetection'.format(file_NoExt)):
         shutil.rmtree('Results/{}/RetentionTimeAlignmentAndPeakDetection'.format(file_NoExt))
     os.mkdir('Results/{}/RetentionTimeAlignmentAndPeakDetection'.format(file_NoExt))
-    
-    ## ms1_peaks
-    # Load data
-    rtalign_data['toAlign_ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
-    rtalign_data['toAlign_ms1'] = rtalign_data['toAlign_ms1'].apply(pd.to_numeric, errors = "ignore")
-    
-    rtalign_data['toAlign_ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
-    rtalign_data['toAlign_ms2'] = rtalign_data['toAlign_ms2'].apply(pd.to_numeric, errors = "ignore")
-    
+
     if file_NoExt == middle:
-        #Just save the middle/reference file as it is
-        deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), rtalign_data['ref_ms1'], key='ms1')
-        deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), rtalign_data['ref_ms2'], key='ms2')
+        # No need to align the reference file
+        pass
     else:
         ## Retention Time Align all other files
+        # Load data
+        rtalign_data['toAlign_ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
+        rtalign_data['toAlign_ms1'] = rtalign_data['toAlign_ms1'].apply(pd.to_numeric, errors = "ignore")  
         
-        #Visualise misalignment
-        # Collapse
-        ToAlign_ms1 = deimos.collapse(rtalign_data['toAlign_ms1'], keep='retention_time').sort_values(by='retention_time')
-        Ref_ms1 = deimos.collapse(rtalign_data['ref_ms1'], keep='retention_time').sort_values(by='retention_time')
-        # Visualize
-        fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-        ax.fill_between(ToAlign_ms1['retention_time'], ToAlign_ms1['intensity'], color='C0', alpha=0.5, label='A')
-        ax.fill_between(Ref_ms1['retention_time'], Ref_ms1['intensity'], color='C3', alpha=0.5, label='B')
-        ax.set_xlabel('Retention Time (MS1)', fontweight='bold')
-        ax.set_ylabel('Intensity', fontweight='bold')
-        ax.set_xlim(0, None)
-        ax.set_ylim(0, None)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1_InitialMisalignment.png'.format(file_NoExt))
-        #Save memory space
-        plt.close()
+        rtalign_data['toAlign_ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
+        rtalign_data['toAlign_ms2'] = rtalign_data['toAlign_ms2'].apply(pd.to_numeric, errors = "ignore")
         
-        ToAlign_ms2 = deimos.collapse(rtalign_data['toAlign_ms2'], keep='retention_time').sort_values(by='retention_time')
-        Ref_ms2 = deimos.collapse(rtalign_data['ref_ms2'], keep='retention_time').sort_values(by='retention_time')
-        # Visualize
-        fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-        ax.fill_between(ToAlign_ms2['retention_time'], ToAlign_ms2['intensity'], color='C0', alpha=0.5, label='A')
-        ax.fill_between(Ref_ms2['retention_time'], Ref_ms2['intensity'], color='C3', alpha=0.5, label='B')
-        ax.set_xlabel('Retention Time (ms2)', fontweight='bold')
-        ax.set_ylabel('Intensity', fontweight='bold')
-        ax.set_xlim(0, None)
-        ax.set_ylim(0, None)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2_InitialMisalignment.png'.format(file_NoExt))
-        #Save memory space
-        plt.close()
+        # #Visualise misalignment
+        # # Collapse
+        # ToAlign_ms1 = deimos.collapse(rtalign_data['toAlign_ms1'], keep='retention_time').sort_values(by='retention_time')
+        # Ref_ms1 = deimos.collapse(rtalign_data['ref_ms1'], keep='retention_time').sort_values(by='retention_time')
+        # # Visualize
+        # fig, ax = plt.subplots(1, dpi=150, facecolor='w')
+        # ax.fill_between(ToAlign_ms1['retention_time'], ToAlign_ms1['intensity'], color='C0', alpha=0.5, label='A')
+        # ax.fill_between(Ref_ms1['retention_time'], Ref_ms1['intensity'], color='C3', alpha=0.5, label='B')
+        # ax.set_xlabel('Retention Time (MS1)', fontweight='bold')
+        # ax.set_ylabel('Intensity', fontweight='bold')
+        # ax.set_xlim(0, None)
+        # ax.set_ylim(0, None)
+        # plt.legend()
+        # plt.tight_layout()
+        # plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1_InitialMisalignment.png'.format(file_NoExt))
+        # #Save memory space
+        # plt.close()
+        
+        # ToAlign_ms2 = deimos.collapse(rtalign_data['toAlign_ms2'], keep='retention_time').sort_values(by='retention_time')
+        # Ref_ms2 = deimos.collapse(rtalign_data['ref_ms2'], keep='retention_time').sort_values(by='retention_time')
+        # # Visualize
+        # fig, ax = plt.subplots(1, dpi=150, facecolor='w')
+        # ax.fill_between(ToAlign_ms2['retention_time'], ToAlign_ms2['intensity'], color='C0', alpha=0.5, label='A')
+        # ax.fill_between(Ref_ms2['retention_time'], Ref_ms2['intensity'], color='C3', alpha=0.5, label='B')
+        # ax.set_xlabel('Retention Time (ms2)', fontweight='bold')
+        # ax.set_ylabel('Intensity', fontweight='bold')
+        # ax.set_xlim(0, None)
+        # ax.set_ylim(0, None)
+        # plt.legend()
+        # plt.tight_layout()
+        # plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2_InitialMisalignment.png'.format(file_NoExt))
+        # #Save memory space
+        # plt.close()
         
         # Perform peak detection
         peaks = {}
@@ -216,30 +217,30 @@ def RetentionTimeAlignment(file_NoExt, rtalign_data, middle, rtalign_persisHomol
                                           align='retention_time', kernel='rbf', C=1000)
         newx_ms2 = np.linspace(0, toAlign_ms2_matched['retention_time'].max(), 1000)
         
-        # Visualize
-        fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-        ax.plot(newx_ms1, spl_ms1(newx_ms1), c='black', linewidth=1, linestyle='--')
-        ax.scatter(toAlign_ms1_matched['retention_time'], ref_ms1_matched['retention_time'], s=2)
-        ax.set_xlabel('Retention Time (A) (MS1)', fontweight='bold')
-        ax.set_ylabel('Retention Time (B) (MS1)', fontweight='bold')
-        ax.set_xlim(0, 25)
-        ax.set_ylim(0, 25)
-        plt.tight_layout()
-        plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1_SVRSplineFit.png'.format(file_NoExt))
-        #Save memory space
-        plt.close()
+        # # Visualize
+        # fig, ax = plt.subplots(1, dpi=150, facecolor='w')
+        # ax.plot(newx_ms1, spl_ms1(newx_ms1), c='black', linewidth=1, linestyle='--')
+        # ax.scatter(toAlign_ms1_matched['retention_time'], ref_ms1_matched['retention_time'], s=2)
+        # ax.set_xlabel('Retention Time (A) (MS1)', fontweight='bold')
+        # ax.set_ylabel('Retention Time (B) (MS1)', fontweight='bold')
+        # ax.set_xlim(0, 25)
+        # ax.set_ylim(0, 25)
+        # plt.tight_layout()
+        # plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1_SVRSplineFit.png'.format(file_NoExt))
+        # #Save memory space
+        # plt.close()
         
-        fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-        ax.plot(newx_ms2, spl_ms2(newx_ms2), c='black', linewidth=1, linestyle='--')
-        ax.scatter(toAlign_ms2_matched['retention_time'], ref_ms2_matched['retention_time'], s=2)
-        ax.set_xlabel('Retention Time (A) (MS2)', fontweight='bold')
-        ax.set_ylabel('Retention Time (B) (MS2)', fontweight='bold')
-        ax.set_xlim(0, 25)
-        ax.set_ylim(0, 25)
-        plt.tight_layout()
-        plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2_SVRSplineFit.png'.format(file_NoExt))
-        #Save memory space
-        plt.close()
+        # fig, ax = plt.subplots(1, dpi=150, facecolor='w')
+        # ax.plot(newx_ms2, spl_ms2(newx_ms2), c='black', linewidth=1, linestyle='--')
+        # ax.scatter(toAlign_ms2_matched['retention_time'], ref_ms2_matched['retention_time'], s=2)
+        # ax.set_xlabel('Retention Time (A) (MS2)', fontweight='bold')
+        # ax.set_ylabel('Retention Time (B) (MS2)', fontweight='bold')
+        # ax.set_xlim(0, 25)
+        # ax.set_ylim(0, 25)
+        # plt.tight_layout()
+        # plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2_SVRSplineFit.png'.format(file_NoExt))
+        # #Save memory space
+        # plt.close()
         
         #Apply Alignment
         rtalign_data['Aligned_ms1'] = rtalign_data['toAlign_ms1'].copy()
@@ -252,32 +253,32 @@ def RetentionTimeAlignment(file_NoExt, rtalign_data, middle, rtalign_persisHomol
         rt_aligned_ms1 = deimos.collapse(rtalign_data['Aligned_ms1'], keep='retention_time').sort_values(by='retention_time')
         rt_aligned_ms2 = deimos.collapse(rtalign_data['Aligned_ms2'], keep='retention_time').sort_values(by='retention_time')
         
-        # Visualize
-        fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-        ax.fill_between(rt_aligned_ms1['retention_time'], rt_aligned_ms1['intensity'], color='C0', alpha=0.5, label='spl(A)')
-        ax.fill_between(Ref_ms1['retention_time'], Ref_ms1['intensity'], color='C3', alpha=0.5, label='B')
-        ax.set_xlabel('Retention Time (MS1)', fontweight='bold')
-        ax.set_ylabel('Intensity', fontweight='bold')
-        ax.set_xlim(0, None)
-        ax.set_ylim(0, None)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1_RetentionTimeAlgined.png'.format(file_NoExt))
-        #Save memory space
-        plt.close()
+        # # Visualize
+        # fig, ax = plt.subplots(1, dpi=150, facecolor='w')
+        # ax.fill_between(rt_aligned_ms1['retention_time'], rt_aligned_ms1['intensity'], color='C0', alpha=0.5, label='spl(A)')
+        # ax.fill_between(Ref_ms1['retention_time'], Ref_ms1['intensity'], color='C3', alpha=0.5, label='B')
+        # ax.set_xlabel('Retention Time (MS1)', fontweight='bold')
+        # ax.set_ylabel('Intensity', fontweight='bold')
+        # ax.set_xlim(0, None)
+        # ax.set_ylim(0, None)
+        # plt.legend()
+        # plt.tight_layout()
+        # plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1_RetentionTimeAlgined.png'.format(file_NoExt))
+        # #Save memory space
+        # plt.close()
         
-        fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-        ax.fill_between(rt_aligned_ms2['retention_time'], rt_aligned_ms2['intensity'], color='C0', alpha=0.5, label='spl(A)')
-        ax.fill_between(Ref_ms2['retention_time'], Ref_ms2['intensity'], color='C3', alpha=0.5, label='B')
-        ax.set_xlabel('Retention Time (MS2)', fontweight='bold')
-        ax.set_ylabel('Intensity', fontweight='bold')
-        ax.set_xlim(0, None)
-        ax.set_ylim(0, None)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2_RetentionTimeAlgined.png'.format(file_NoExt))
-        #Save memory space
-        plt.close()
+        # fig, ax = plt.subplots(1, dpi=150, facecolor='w')
+        # ax.fill_between(rt_aligned_ms2['retention_time'], rt_aligned_ms2['intensity'], color='C0', alpha=0.5, label='spl(A)')
+        # ax.fill_between(Ref_ms2['retention_time'], Ref_ms2['intensity'], color='C3', alpha=0.5, label='B')
+        # ax.set_xlabel('Retention Time (MS2)', fontweight='bold')
+        # ax.set_ylabel('Intensity', fontweight='bold')
+        # ax.set_xlim(0, None)
+        # ax.set_ylim(0, None)
+        # plt.legend()
+        # plt.tight_layout()
+        # plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2_RetentionTimeAlgined.png'.format(file_NoExt))
+        # #Save memory space
+        # plt.close()
         
         #Save Data as HD5 file
         deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), rtalign_data['Aligned_ms1'], key='ms1')
@@ -292,11 +293,16 @@ def DetectPeaks(file_NoExt, PeakDet_intensity_thres, PeakDet_smooth_data_radius,
     os.mkdir('Results/{}/PeakDetection'.format(file_NoExt))
     
     ## ms1_peaks
+    # # Load data
+    # ms1_iso = deimos.load('Results/RTAligned_{}.h5'.format(file_NoExt), key='ms1')
+    # ms1_iso = ms1_iso.apply(pd.to_numeric, errors = "ignore")
+    # #Remove the scanId column (Only required for Isotope Detection process)
+    # ms1 = ms1_iso.drop('scanId', axis = 1)
+
     # Load data
-    ms1_iso = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
-    ms1_iso = ms1_iso.apply(pd.to_numeric, errors = "ignore")
-    #Remove the scanId column (Only required for Isotope Detection process)
-    ms1 = ms1_iso.drop('scanId', axis = 1)
+    ms1 = deimos.load('Results/RTAligned_{}.h5'.format(file_NoExt), key='ms1')
+    ms1 = ms1.apply(pd.to_numeric, errors = "ignore")
+
     # Build factors from raw data
     factors = deimos.build_factors(ms1, dims='detect')
     # Nominal threshold
@@ -320,9 +326,12 @@ def DetectPeaks(file_NoExt, PeakDet_intensity_thres, PeakDet_smooth_data_radius,
     #Remove columns not required for downstream processes
     ms1_peaks = ms1_peaks.drop(['mz_weighted', 'drift_time_weighted', 
                                 'retention_time_weighted'], axis = 1)
+
+    # del [ms1_iso, ms1, factors, ms1_thres500, ms1_peaks] #type: ignore
+    
     ## ms2_peaks
     # Load data, excluding scanid column
-    ms2 = deimos.load('{}.h5'.format(file_NoExt), key='ms2', columns=['mz', 'drift_time', 
+    ms2 = deimos.load('Results/RTAligned_{}.h5'.format(file_NoExt), key='ms2', columns=['mz', 'drift_time', 
                                                               'retention_time', 
                                                               'intensity'])
     # Build factors from raw data
@@ -353,11 +362,11 @@ def DetectPeaks(file_NoExt, PeakDet_intensity_thres, PeakDet_smooth_data_radius,
     # deimos.save('{}_peaks.h5'.format(file_NoExt), ms1_peaks, key='ms1', mode='w')
     # deimos.save('{}_peaks.h5'.format(file_NoExt), ms2_peaks, key='ms2', mode='a')
     
-    return ms1, ms1_peaks, ms2, ms2_peaks, ms1_iso
+    return ms1, ms1_peaks, ms2, ms2_peaks
 
 def DetectIsotopes(ms1_peaks, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
                    isotope_map_delta, isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, file_NoExt, 
-                   isotope_min_no_isotopes, ms1_iso, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
+                   isotope_min_no_isotopes, ms1, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
                    isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, 
                    isotope_plot_slice_rt_high): 
     #Remeber to use ms1_iso object and remove persistence from ms1_peaks object
@@ -391,7 +400,7 @@ def DetectIsotopes(ms1_peaks, isotope_intensity_thres, isotope_partition_size, i
     for index, row in isotopes.iterrows():
         
         #Following Peak detection steps to subset data within the mass range of the isotope
-        ms1_iso_ss = deimos.slice(ms1_iso, by='mz', 
+        ms1_iso_ss = deimos.slice(ms1, by='mz', 
                                   low = row['mz']-isotope_slice_mz_low, 
                                   high = row['mz']+isotope_slice_mz_high)
         

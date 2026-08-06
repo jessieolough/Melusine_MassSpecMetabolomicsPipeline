@@ -1,7 +1,8 @@
 import pandas as pd #Handle dataframes
 from datetime import datetime #Get current date and time
-from ipaPy2 import ipa #import the libraries
+from ipaPy2 import ipa #import the libraries #type: ignore
 import pickle #Pickle dictionary object to save in directory
+import os #Help with reading and saving files in specified directories
 
 ##Set thresholds for different processes
 #ipaPy2 Annotation
@@ -19,8 +20,6 @@ def MetaboliteAnnotationSteps():
     drifts_stripped = pd.read_csv('20250506_Results_ToReviewWithKarl/final_dataframe_unannotated.csv')
     drifts_stripped = pd.DataFrame(drifts_stripped)
     drifts_stripped = drifts_stripped.apply(pd.to_numeric, errors = "ignore")
-
-    #OK! Perform all IPA steps!
     
     #get the database files
     #TODO: Replace this with a custom db extracted from the MSDial libraries
@@ -47,6 +46,7 @@ def MetaboliteAnnotationSteps():
     #Remove unnecessary columns
     drifts_stripped = drifts_stripped.drop('CCS', axis=1)
     drifts_stripped = drifts_stripped.drop('drifts', axis=1)
+    #TODO: improve how the sample columns are specified to be kept
     drifts_stripped = drifts_stripped[['ids','mzs', 'RTs',
                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_1',
                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_1_MA-d9-Min5-Spk',
@@ -193,100 +193,6 @@ def MetaboliteAnnotationSteps():
     
     except:
         print("Unable to save annotations dictionary as pickled file")
-    
-def AddInCCSDataSteps(DB, annotations):
-    #TODO: remove and add back in the steps to generate annotations
-    annotations_df = pd.read_csv('annotations_df_keys.csv')
-    mcleanLibrary = pd.read_csv('UnifiedCCSCompendium_FullDataSet.csv')
-    mcleanLibrary = mcleanLibrary[['Compound', 'InChi', 'mz', 'CCS']]
-    mcleanLibrary = mcleanLibrary.add_suffix('_mclean')
-    #Rename InChi_mclean column in McLean data to inchi to allow downstream merging
-    mcleanLibrary = mcleanLibrary.rename(columns = {"InChi_mclean":"inchi"})
-    #Remove rows with unknown inchi keys (otherwise all unknowns will be merged)
-    mcleanLibrary = mcleanLibrary[mcleanLibrary['inchi'].notna()]
-    print(mcleanLibrary)
-    
-    DB_sub = DB[['id', 'inchi']]
-    #Remove rows with unknown inchi keys (otherwise all unknowns will be merged)
-    # DB_sub = DB_sub [DB_sub ['inchi'].notna()]
-    print(DB_sub)
-    
-    
-    annotations = []
-    with (open("annotations_afterMS1annotation_JO.pkl", "rb")) as openfile:
-        while True:
-            try:
-                annotations.append(pickle.load(openfile))
-            except EOFError:
-                break
-            
-    annotations = annotations[0]
-    print(len(annotations))
-# =============================================================================
-#     from itertools import islice
-#     annotations = dict(islice(annotations.items(), 30))
-#     print(len(annotations))
-# =============================================================================
-    
-    #Save each key as a row in a new dataframe
-    annotations_df = pd.DataFrame()
-    
-    for key, metabolite in annotations.items():
-        metabolite_df = pd.DataFrame()
-        
-        # print(metabolite)
-        #Add in inchi keys to allow matching with McLean Library
-        # print(metabolite['id'])
-        inchi_keys = pd.merge(metabolite, DB_sub, on="id", how = "left")
-        inchi_keys = inchi_keys[['id', 'name', 'inchi']]
-        # print(inchi_keys)
-        #Match inchi keys in the McLean Library 
-        mcleanData = pd.merge(inchi_keys, mcleanLibrary, on="inchi", how = "left")
-        # print(mcleanData[['id', 'name', 'inchi', 'Compound_mclean', 'mz_mclean', 'CCS_mclean']])
-
-        # print("-=-=-=-=-=-=-=-=-")
-        
-        
-        metabolite_df["key"] = ""
-        metabolite_df.at[0, 'key'] = key
-        metabolite_df["id"] = ""
-        metabolite_df.at[0, 'id'] = list(metabolite['id'].values)
-        metabolite_df["name"] = ""
-        metabolite_df.at[0, 'name'] = list(metabolite['name'].values)
-        metabolite_df["formula"] = ""
-        metabolite_df.at[0, 'formula'] = list(metabolite['formula'].values)
-        metabolite_df["adduct"] = ""
-        metabolite_df.at[0, 'adduct'] = list(metabolite['adduct'].values)
-        metabolite_df["m/z"] = ""
-        metabolite_df.at[0, 'm/z'] = list(metabolite['m/z'].values)
-        metabolite_df["charge"] = ""
-        metabolite_df.at[0, 'charge'] = list(metabolite['charge'].values)
-        metabolite_df["RT range"] = ""
-        metabolite_df.at[0, 'RT range'] = list(metabolite['RT range'].values)
-        metabolite_df["ppm"] = ""
-        metabolite_df.at[0, 'ppm'] = list(metabolite['ppm'].values)
-        metabolite_df["isotope pattern score"] = ""
-        metabolite_df.at[0, 'isotope pattern score'] = list(metabolite['isotope pattern score'].values)
-        metabolite_df["fragmentation pattern score"] = ""
-        metabolite_df.at[0, 'fragmentation pattern score'] = list(metabolite['fragmentation pattern score'].values)
-        metabolite_df["prior"] = ""
-        metabolite_df.at[0, 'prior'] = list(metabolite['prior'].values)
-        metabolite_df["post"] = ""
-        metabolite_df.at[0, 'post'] = list(metabolite['post'].values)
-        # metabolite_df["post Gibbs"] = ""
-        # metabolite_df.at[0, 'post Gibbs'] = list(metabolite['post Gibbs'].values)
-        # metabolite_df["chi-square pval"] = ""
-        # metabolite_df.at[0, 'chi-square pval'] = list(metabolite['chi-square pval'].values)
-        metabolite_df["inchi"] = ""
-        metabolite_df.at[0, 'inchi'] = list(mcleanData['inchi'].values)
-        metabolite_df["Compound_mclean"] = ""
-        metabolite_df.at[0, 'id'] = list(mcleanData['Compound_mclean'].values)
-        
-        #Add data to final dataframe
-        annotations_df = pd.concat([annotations_df, metabolite_df])
-        
-    annotations_df.to_csv("annotations_df_keys_merged_test.csv", index = False)
-    print("annotations_df saved as CSV and pickled file")
 
     
 # =============================================================================
@@ -346,15 +252,14 @@ if __name__ == "__main__":
     print("===============================")
     print("ipaPy2 Script startTime:", startTime)
     print("===============================")
+
+    #Set working directory
+    os.chdir(r"f:\JessicaOLoughlin\RawDataMZMLFiles")
+    print("Working directory set")
         
     # MetaboliteAnnotationSteps(drifts_stripped)
-# =============================================================================
-#     MetaboliteAnnotationSteps()
-#     print("MetaboliteAnnotationSteps() complete")
-# =============================================================================
-    
-    AddInCCSDataSteps()
-    print("AddInCCSDataSteps() complete")
+    MetaboliteAnnotationSteps()
+    print("MetaboliteAnnotationSteps() complete")    
     
     print("===============================")
     print("ipaPy2 Script stopTime:", datetime.now())
