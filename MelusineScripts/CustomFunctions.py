@@ -415,7 +415,7 @@ def MinimumDetectionThresholdSteps(PeakMerged_dataframe):
     #Make a list of the samples
     samples = list(df.columns)
     #Remove non-sample names from list
-    to_remove = ['mzs', 'RTs', 'drifts', 'ids', 'CCS']
+    to_remove = ['mzs', 'RTs', 'drifts', 'ids', 'CCS', 'RT_bin']
     samples = [x for x in samples if x not in to_remove]
 
     minimum_detection_group_threshold = 0.50 #33% - PLEASE give to 2 significant figures!
@@ -426,13 +426,17 @@ def MinimumDetectionThresholdSteps(PeakMerged_dataframe):
     count_OverMinThreshold = 0
     count_UnderMinThreshold = 0
 
+    print("Checks done")
+
     #Features in QCs and NOT in samples are to be removed
     for index, row in df.iterrows(): #Loop through each feature
         feature_series = row
         feature = pd.DataFrame(row)
         feature = feature.reset_index()
-        feature = feature.rename(columns = {"index":"Samples", 
-                                        feature.columns[1]: "Intensities"})
+        # feature = feature.rename(columns = {"index":"Samples", 
+        #                                 feature.columns[1]: "Intensities"})
+        feature.columns.values[0] = "Samples"
+        feature.columns.values[1] = "Intensities"
         #Remove non-samples
         feature = feature[feature.Samples.isin(to_remove) == False]
         #Add in grouping information
@@ -470,6 +474,7 @@ def MinimumDetectionThresholdSteps(PeakMerged_dataframe):
                                                         pd.DataFrame(ND_prop)])
         #Perform minimum detection threshold filtering
         ND_proportions_feature = ND_proportions_feature.reset_index(drop = True)
+        print(ND_proportions_feature)
         if ND_proportions_feature["Proportion"].min() > minimum_detection_group_threshold:
             #If minimum 0.001 abundance got a feature is above the threshold --> remove
             count_OverMinThreshold += 1

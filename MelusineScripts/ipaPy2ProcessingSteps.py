@@ -17,6 +17,7 @@ ipaPy2_GibbsSamplerAdd_delta_add = 0.1
 def MetaboliteAnnotationSteps():
     #With thanks to Karl Burgess for scripting the majority this section
     
+    startDataLoad = datetime.now()
     drifts_stripped = pd.read_csv('20250506_Results_ToReviewWithKarl/final_dataframe_unannotated.csv')
     drifts_stripped = pd.DataFrame(drifts_stripped)
     drifts_stripped = drifts_stripped.apply(pd.to_numeric, errors = "ignore")
@@ -194,6 +195,14 @@ def MetaboliteAnnotationSteps():
     except:
         print("Unable to save annotations dictionary as pickled file")
 
+    print("Time to Read and Tidy Data:", time_before_clusterFeatures-startDataLoad)
+    print("Time for ipa.clusterFeatures():", time_after_clusterFeatures-time_before_clusterFeatures)
+    print("Time for ipa.compute_all_adducts():", time_before_map_isotope_patterns-time_after_clusterFeatures)
+    print("Time for ipa.map_isotope_patterns():", time_after_map_isotope_patterns-time_before_map_isotope_patterns)
+    print("Time for ipa.MS1annotation():", time_after_MS1annotation-time_after_map_isotope_patterns)
+    print("Time for ipa.Gibbs_sampler_add():", time_after_Gibbs_sampler_add-time_after_MS1annotation)
+    print("Time for ipa.Compute_Bio():", time_after_Compute_Bio-time_after_Gibbs_sampler_add)
+    print("Time for ipa.Givvs_sampler_bio_add():", time_after_Gibbs_sampler_bio_add-time_after_Compute_Bio)
     
 # =============================================================================
 #     ##Merge the feature_data and annotations_df objects together

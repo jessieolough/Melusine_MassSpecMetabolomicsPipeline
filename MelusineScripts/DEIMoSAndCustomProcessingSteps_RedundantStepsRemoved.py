@@ -152,6 +152,7 @@ def ReadFilesInDirectory():
     
     #Remove the Calibration files from the main analysis pipeline
     files  = [x for x in files if x not in calib_files]
+    
     #TODO: For development only
     # files = files[slice(3)]
     files = ['POS_FBS_IM_MSMS_40kTF_400TR_4.h5']
@@ -159,9 +160,6 @@ def ReadFilesInDirectory():
     print("Files to be processed:")
     for file in files:
         print(file)
-
-    #TODO: For development only
-    # files = ['POS_FBS_IM_MSMS_40kTF_400TR_4.h5']
     
     return files
 
@@ -171,6 +169,33 @@ def CreateResultsFile():
         shutil.rmtree('Results')
     os.makedirs('Results')
 
+import deimos
+import DEIMoSFunctions_RedundantStepsRemoved
+#Custom Errors
+class CustomError(Exception):
+    pass
+
+#Set whether the pipeline will undergo MS2 data processing or not
+MS2DataPresent = True
+#Peak Detection
+ms1_threshold = 500
+if MS2DataPresent is True:
+    ms2_threshold = 500
+else:
+    ms2_threshold = None
+SaveDetectedPeaksData = True
+#Retention Time Alignment
+PerformRTAlignment = False
+SaveRTAlignmentDataFiles = True
+SaveRTAlignmentGraphs = True
+#Isotope Detection
+PerformIsotopeDetection = False
+SaveIsotopeDetDataFiles = True
+SaveIsotopeDetGraphs = True
+#MS2 Extraction
+SaveMS2ExtractDataFiles = True
+SaveMS2ExtractGraphs = True
+
 if __name__ == "__main__":
     
     processes=1
@@ -179,6 +204,26 @@ if __name__ == "__main__":
     print("===============================")
     print("DEIMoS Script startTime:", startTime)
     print("===============================")
+
+    print("-=-=-=-=-=-=-=-Parameters=-=-=-=-=-=-=-=-=")
+    print("========Peak Detection========")
+    print("MS1 threshold:", ms1_threshold)
+    print("MS2 threshold:", ms2_threshold)
+    print("SaveDetectedPeaksData?", SaveDetectedPeaksData)
+    print("===Retention Time Alignment===")
+    print("Retention Time Alignment to be performed?", PerformRTAlignment)
+    print("SaveRTAlignmentDataFiles is:", SaveRTAlignmentDataFiles)
+    print("SaveRTAlignmentGraphs is:", SaveRTAlignmentGraphs)
+    print("=======Isotope Detection======")
+    print("Isotope Detection to be performed?", PerformIsotopeDetection)
+    print("SaveIsotopeDetDataFiles is:", SaveIsotopeDetDataFiles)
+    print("SaveIsotopeDetGraphs is:", SaveIsotopeDetGraphs)
+    print("========MS2 Extraction========")
+    print("MS2DataPresent?", MS2DataPresent)
+    if MS2DataPresent is True:
+        print("SaveMS2ExtractDataFiles is:", SaveMS2ExtractDataFiles)
+        print("SaveMS2ExtractGraphs is:", SaveMS2ExtractGraphs)
+    print("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
 
     #Create multipeaks and loopcount objects for downstream agglomerative clustering steps
     # Create a loop counter for the agglomerative clustering steps
@@ -192,18 +237,20 @@ if __name__ == "__main__":
 
     CreateResultsFile()
     print("CreateResultsFile() complete")
-    
-    middle, rtalign_data = DEIMoSFunctions.FindMiddleFileForRTAlignment()
-    print("FindMiddleFileForRTAlignment() complete")
+
+    if PerformRTAlignment is True:
+        #Note: The Peak Detection is also performed for the middle file at this point
+        middle, rtalign_data = DEIMoSFunctions_RedundantStepsRemoved.FindMiddleFileForRTAlignment(ms1_threshold, 
+                                                                                                ms2_threshold,
+                                                                                                PeakDet_smooth_data_radius, 
+                                                                                                PeakDet_persistent_homology_radius, 
+                                                                                                MS2DataPresent)
+        print("FindMiddleFileForRTAlignment() complete")
+    else:
+        middle = None
+        rtalign_data = None
     
     #del [CreationTime, file, Created, middle_row]
-    
-    ccs_cal_pos = DEIMoSFunctions.CreateCCSCalObjects(tune_pos_file, 
-                                                      ccsCalib_mz, ccsCalib_ccs, 
-                                                      ccsCalib_q, ccsCalib_buffer_mass, 
-                                                      ccsCalib_mz_tol, ccsCalib_dt_tol)
-    print("CreateCCSCalObjects() complete")
-    del tune_pos_file
     
     #Loop through the samples in the directory for sample-specific processes
     for sample in files:
@@ -215,56 +262,116 @@ if __name__ == "__main__":
         #Make Folder for results for this sample
         #########################################
         file_NoExt = sample.replace('.h5', '')
-        #Make Folder for results for this sample
-        if os.path.exists('Results/{}'.format(file_NoExt)):
-            shutil.rmtree('Results/{}'.format(file_NoExt))
-        os.makedirs('Results/{}'.format(file_NoExt))
-        
-        DEIMoSFunctions.RetentionTimeAlignment(file_NoExt, rtalign_data, middle, rtalign_persisHomology_thres, 
-                                               rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
-                                               rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol)
-        print("RetentionTimeAlignment() complete")
-        print(list(locals()))
-        
-        ms1, ms1_peaks, ms2, ms2_peaks = DEIMoSFunctions.DetectPeaks(file_NoExt, PeakDet_intensity_thres, 
-                                                                              PeakDet_smooth_data_radius, 
-                                                                              PeakDet_persistent_homology_radius)
-        print("DetectPeaks() complete")
-        
-        res_final = DEIMoSFunctions.ExtractMS2Spectra(ms1, ms2, file_NoExt, MS2Extract_intensity_thres, MS2Extract_ms1_mz_subset_low, MS2Extract_ms1_dt_subset_low, 
-                      MS2Extract_ms1_rt_subset_low, MS2Extract_ms1_mz_subset_high, MS2Extract_ms1_dt_subset_high, 
-                      MS2Extract_ms1_rt_subset_high, MS2Extract_ms2_dt_subset_low, MS2Extract_ms2_rt_subset_low, 
-                      MS2Extract_ms2_dt_subset_high, MS2Extract_ms2_rt_subset_high, MS2Extract_model_ce, MS2Extract_model_params, 
-                      ms1_peaks, ms2_peaks, MS2Extract_ms1_decon_intensity_thres, MS2Extract_ms2_decon_intensity_thres, 
-                      MS2Extract_construct_pairs_dt_low, MS2Extract_construct_pairs_rt_low, MS2Extract_construct_pairs_dt_high, 
-                      MS2Extract_construct_pairs_rt_high, MS2Extract_construct_pairs_ce, MS2Extract_construct_pairs_error_tol, 
-                      MS2Extract_config_extract_mz_low, MS2Extract_config_extract_dt_low, MS2Extract_config_extract_rt_low, 
-                      MS2Extract_config_extract_mz_high, MS2Extract_config_extract_dt_high, MS2Extract_config_extract_rt_high, 
-                      MS2Extract_decon_dt_resolution, MS2Extract_dt_score_threshold)
-        print("ExtractMS2Spectra() complete")
-        
-        # del [ms1_thres100, ms2_thres100, mz_i, dt_i, rt_i, intensity_i, precursor, 
-            #   fragment_profile, fragment_dt, precursor_dt, ms1_peaks_thres_forMS2, 
-            #   ms2_peaks_thres_forMS2, decon, res, offset_correction_model, index, row] #type: ignore
-        
 
-        DEIMoSFunctions.DetectIsotopes(ms1_peaks, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
-                                       isotope_map_delta, isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, file_NoExt, 
-                                       isotope_min_no_isotopes, ms1, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
-                                       isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, 
-                                       isotope_plot_slice_rt_high)
-        print("DetectIsotopes() complete")
-        
-        # del [isotopes, ms1_peaks_thres1000, partitions] #type: ignore
+        #Load data for sample
+        sample_data = {}
+        sample_data['ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
+        sample_data['ms1'] = sample_data['ms1'].apply(pd.to_numeric, errors = "ignore")
+
+        #Threshold the data
+        sample_data['ms1'] = deimos.threshold(sample_data['ms1'], threshold=ms1_threshold)
+        print(sample_data['ms1'])
+
+        if MS2DataPresent is True:
+            sample_data['ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
+            sample_data['ms2'] = sample_data['ms2'].apply(pd.to_numeric, errors = "ignore")
+            sample_data['ms2'] = deimos.threshold(sample_data['ms2'], threshold=ms2_threshold)#type: ignore
+            print(sample_data['ms2'])
+
+        #Detect Peaks
+        #Peaks already detected for the middle file --> can skip
+        if file_NoExt == middle:
+            pass
+        else:
+            sample_data = DEIMoSFunctions_RedundantStepsRemoved.DetectPeaks(file_NoExt, sample_data, 
+                                                                            PeakDet_smooth_data_radius,
+                                                                            PeakDet_persistent_homology_radius, 
+                                                                            MS2DataPresent)
+
+        #If desired, perform RT alignment on the sample
+        if PerformRTAlignment is True:
+            if file_NoExt == middle:
+                # No need to align the reference file
+                print("Retention Time not performed as this is the reference file")
+                #Remove persistence column as it is not required for downstream processes
+                # sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence'], errors='ignore')
+                # sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence'], errors='ignore')
+            else:
+                sample_data = DEIMoSFunctions_RedundantStepsRemoved.RetentionTimeAlignment(file_NoExt, 
+                                                                                           sample_data, 
+                                                                                           rtalign_data, 
+                                                                                           rtalign_persisHomology_thres, 
+                           rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
+                           rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol, 
+                           SaveRTAlignmentDataFiles, SaveRTAlignmentGraphs, MS2DataPresent)
+
+                #Remove persistence and persistence_ratio columns as these are not required for downstream processes
+                # sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence', 'persistence_ratio'], errors='ignore')
+                sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence_ratio'], errors='ignore')
+                if MS2DataPresent is True:
+                    # sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence', 'persistence_ratio'], errors='ignore')
+                    sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence_ratio'], errors='ignore')
+        elif PerformRTAlignment is False:
+            print("Retention Time Alignment not performed")
+            #Remove persistence column as it is not required for downstream processes
+            # sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence'], errors='ignore')
+            # sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence'], errors='ignore')
+        else:
+            raise CustomError("""Set PerformRTAlignment as True or False to indicate whether you want to include this step.""")
+
+        if PerformIsotopeDetection is True:
+            print("Performing Isotope Detection")
+            sample_data = DEIMoSFunctions_RedundantStepsRemoved.DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
+                                        isotope_map_delta, isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, file_NoExt, 
+                                        isotope_min_no_isotopes, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
+                                        isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, 
+                                        isotope_plot_slice_rt_high, SaveIsotopeDetDataFiles, SaveIsotopeDetGraphs)
+            #Make sure that column names in sample_data after Isotope Detection are correct before downstream processes
+            sample_data['ms1_peaks'].rename(columns={'mz_x': 'mz'}, inplace=True)
+            print("DetectIsotopes() complete")
+        elif PerformIsotopeDetection is False:
+            print("Isotope Detection not performed")
+        else:
+            raise CustomError("""Set PerformIsotopeDetection as True or False to indicate whether you want to include this step.""")
+
+        if MS2DataPresent is True:
+            print("Performing MS2 Extraction")
+            res_final = DEIMoSFunctions_RedundantStepsRemoved.ExtractMS2Spectra(sample_data, file_NoExt, MS2Extract_intensity_thres, MS2Extract_ms1_mz_subset_low, MS2Extract_ms1_dt_subset_low, 
+                MS2Extract_ms1_rt_subset_low, MS2Extract_ms1_mz_subset_high, MS2Extract_ms1_dt_subset_high, 
+                MS2Extract_ms1_rt_subset_high, MS2Extract_ms2_dt_subset_low, MS2Extract_ms2_rt_subset_low, 
+                MS2Extract_ms2_dt_subset_high, MS2Extract_ms2_rt_subset_high, MS2Extract_model_ce, MS2Extract_model_params, 
+                MS2Extract_ms1_decon_intensity_thres, MS2Extract_ms2_decon_intensity_thres, 
+                MS2Extract_construct_pairs_dt_low, MS2Extract_construct_pairs_rt_low, MS2Extract_construct_pairs_dt_high, 
+                MS2Extract_construct_pairs_rt_high, MS2Extract_construct_pairs_ce, MS2Extract_construct_pairs_error_tol, 
+                MS2Extract_config_extract_mz_low, MS2Extract_config_extract_dt_low, MS2Extract_config_extract_rt_low, 
+                MS2Extract_config_extract_mz_high, MS2Extract_config_extract_dt_high, MS2Extract_config_extract_rt_high, 
+                MS2Extract_decon_dt_resolution, MS2Extract_dt_score_threshold, SaveMS2ExtractDataFiles, SaveMS2ExtractGraphs)
+            print("ExtractMS2Spectra() complete")
+        else:
+            res_final = sample_data['ms1_peaks']
         
         #Make a folder for this sample for all Agglomerative Clustering results to go in to
         if os.path.exists('Results/{}/AgglomerativeClustering'.format(file_NoExt)):
             shutil.rmtree('Results/{}/AgglomerativeClustering'.format(file_NoExt))
         os.mkdir('Results/{}/AgglomerativeClustering'.format(file_NoExt))
         
-        loopcount = DEIMoSFunctions.AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_mergeFeatures_mz_dt_rt_tol, 
+        loopcount = DEIMoSFunctions_RedundantStepsRemoved.AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_mergeFeatures_mz_dt_rt_tol, 
                                                   file_NoExt)
         print("AgglomerativeClusteringConcatenateNewPeakData() complete")
+
+        del sample_data
+
+    print("===============================")
+    print("DEIMoS Script stopTime:", datetime.now())
+    print("Total process run time:", datetime.now() - startTime)
+    print("===============================")
+
+    print("===============================")
+    print("Objects stored locally from DEIMoS and custom steps:")
+    print(list(locals()))
+    print("===============================")
+
+    exit()
         
     # del [files, middle, sample, file_NoExt, ms1, ms1_peaks, ms2, 
         #   ms2_peaks, loopcount, ReadFilesInDirectory, FindMiddleFileForRTAlignment,
@@ -274,6 +381,13 @@ if __name__ == "__main__":
     #Perform once final dataset for clustering (w/ all sample data) is created    
     clustering = DEIMoSFunctions.AgglomerativeClusteringMainSteps(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol)
     print("AgglomerativeClusteringMainSteps() complete")
+
+    ccs_cal_pos = DEIMoSFunctions.CreateCCSCalObjects(tune_pos_file, 
+                                                    ccsCalib_mz, ccsCalib_ccs, 
+                                                    ccsCalib_q, ccsCalib_buffer_mass, 
+                                                    ccsCalib_mz_tol, ccsCalib_dt_tol)
+    print("CreateCCSCalObjects() complete")
+    del tune_pos_file
     
     drifts_stripped = DEIMoSFunctions.CCSCalibrationSteps(ccs_cal_pos, clustering)
     print("CCSCalibrationSteps() complete")
