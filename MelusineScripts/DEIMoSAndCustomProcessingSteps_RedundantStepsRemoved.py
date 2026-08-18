@@ -185,7 +185,7 @@ else:
     ms2_threshold = None
 SaveDetectedPeaksData = True
 #Retention Time Alignment
-PerformRTAlignment = False
+PerformRTAlignment = True
 SaveRTAlignmentDataFiles = True
 SaveRTAlignmentGraphs = True
 #Isotope Detection
@@ -194,7 +194,7 @@ SaveIsotopeDetDataFiles = True
 SaveIsotopeDetGraphs = True
 #MS2 Extraction
 SaveMS2ExtractDataFiles = True
-SaveMS2ExtractGraphs = True
+SaveMS2ExtractGraphs = False
 
 if __name__ == "__main__":
     
@@ -263,30 +263,31 @@ if __name__ == "__main__":
         #########################################
         file_NoExt = sample.replace('.h5', '')
 
-        #Load data for sample
-        sample_data = {}
-        sample_data['ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
-        sample_data['ms1'] = sample_data['ms1'].apply(pd.to_numeric, errors = "ignore")
-
-        #Threshold the data
-        sample_data['ms1'] = deimos.threshold(sample_data['ms1'], threshold=ms1_threshold)
-        print(sample_data['ms1'])
-
-        if MS2DataPresent is True:
-            sample_data['ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
-            sample_data['ms2'] = sample_data['ms2'].apply(pd.to_numeric, errors = "ignore")
-            sample_data['ms2'] = deimos.threshold(sample_data['ms2'], threshold=ms2_threshold)#type: ignore
-            print(sample_data['ms2'])
-
-        #Detect Peaks
-        #Peaks already detected for the middle file --> can skip
-        if file_NoExt == middle:
+        if file_NoExt == middle: #Folder already created at FindMiddleFileForRTAlignment() stage
             pass
         else:
-            sample_data = DEIMoSFunctions_RedundantStepsRemoved.DetectPeaks(file_NoExt, sample_data, 
-                                                                            PeakDet_smooth_data_radius,
-                                                                            PeakDet_persistent_homology_radius, 
-                                                                            MS2DataPresent)
+            #Make Folder for results for this sample
+            if os.path.exists('Results/{}'.format(file_NoExt)):
+                shutil.rmtree('Results/{}'.format(file_NoExt))
+            os.makedirs('Results/{}'.format(file_NoExt))
+
+        if file_NoExt == middle:
+            sample_data = rtalign_data.copy()#type: ignore
+        else:
+            #Load data for sample
+            sample_data = {}
+            sample_data['ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
+            sample_data['ms1'] = sample_data['ms1'].apply(pd.to_numeric, errors = "ignore")
+
+            #Threshold the data
+            sample_data['ms1'] = deimos.threshold(sample_data['ms1'], threshold=ms1_threshold)
+            print(sample_data['ms1'])
+
+            if MS2DataPresent is True:
+                sample_data['ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
+                sample_data['ms2'] = sample_data['ms2'].apply(pd.to_numeric, errors = "ignore")
+                sample_data['ms2'] = deimos.threshold(sample_data['ms2'], threshold=ms2_threshold)#type: ignore
+                print(sample_data['ms2'])
 
         #If desired, perform RT alignment on the sample
         if PerformRTAlignment is True:
@@ -303,14 +304,14 @@ if __name__ == "__main__":
                                                                                            rtalign_persisHomology_thres, 
                            rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
                            rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol, 
-                           SaveRTAlignmentDataFiles, SaveRTAlignmentGraphs, MS2DataPresent)
+                           SaveRTAlignmentDataFiles, SaveRTAlignmentGraphs, MS2DataPresent, PeakDet_smooth_data_radius,
+                           PeakDet_persistent_homology_radius
+                           )
 
                 #Remove persistence and persistence_ratio columns as these are not required for downstream processes
-                # sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence', 'persistence_ratio'], errors='ignore')
-                sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence_ratio'], errors='ignore')
-                if MS2DataPresent is True:
-                    # sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence', 'persistence_ratio'], errors='ignore')
-                    sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence_ratio'], errors='ignore')
+                # sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence_ratio'], errors='ignore')
+                # if MS2DataPresent is True:
+                #     sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence_ratio'], errors='ignore')
         elif PerformRTAlignment is False:
             print("Retention Time Alignment not performed")
             #Remove persistence column as it is not required for downstream processes
@@ -319,20 +320,15 @@ if __name__ == "__main__":
         else:
             raise CustomError("""Set PerformRTAlignment as True or False to indicate whether you want to include this step.""")
 
-        if PerformIsotopeDetection is True:
-            print("Performing Isotope Detection")
-            sample_data = DEIMoSFunctions_RedundantStepsRemoved.DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
-                                        isotope_map_delta, isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, file_NoExt, 
-                                        isotope_min_no_isotopes, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
-                                        isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, 
-                                        isotope_plot_slice_rt_high, SaveIsotopeDetDataFiles, SaveIsotopeDetGraphs)
-            #Make sure that column names in sample_data after Isotope Detection are correct before downstream processes
-            sample_data['ms1_peaks'].rename(columns={'mz_x': 'mz'}, inplace=True)
-            print("DetectIsotopes() complete")
-        elif PerformIsotopeDetection is False:
-            print("Isotope Detection not performed")
+        #Detect Peaks
+        #Peaks already detected for the middle file --> can skip
+        if file_NoExt == middle:
+            pass
         else:
-            raise CustomError("""Set PerformIsotopeDetection as True or False to indicate whether you want to include this step.""")
+            sample_data = DEIMoSFunctions_RedundantStepsRemoved.DetectPeaks(file_NoExt, sample_data, 
+                                                                            PeakDet_smooth_data_radius,
+                                                                            PeakDet_persistent_homology_radius, 
+                                                                            MS2DataPresent)
 
         if MS2DataPresent is True:
             print("Performing MS2 Extraction")
@@ -349,6 +345,26 @@ if __name__ == "__main__":
             print("ExtractMS2Spectra() complete")
         else:
             res_final = sample_data['ms1_peaks']
+
+        print(sample_data['ms1'])
+        print(sample_data['ms1_peaks'])
+        print(sample_data['ms2'])
+        print(sample_data['ms2_peaks'])
+
+        if PerformIsotopeDetection is True:
+            print("Performing Isotope Detection")
+            sample_data, res_final = DEIMoSFunctions_RedundantStepsRemoved.DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
+                                        isotope_map_delta, isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, file_NoExt, 
+                                        isotope_min_no_isotopes, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
+                                        isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, 
+                                        isotope_plot_slice_rt_high, SaveIsotopeDetDataFiles, SaveIsotopeDetGraphs, res_final)
+            #Make sure that column names in sample_data after Isotope Detection are correct before downstream processes
+            sample_data['ms1_peaks'].rename(columns={'mz_x': 'mz'}, inplace=True)
+            print("DetectIsotopes() complete")
+        elif PerformIsotopeDetection is False:
+            print("Isotope Detection not performed")
+        else:
+            raise CustomError("""Set PerformIsotopeDetection as True or False to indicate whether you want to include this step.""")
         
         #Make a folder for this sample for all Agglomerative Clustering results to go in to
         if os.path.exists('Results/{}/AgglomerativeClustering'.format(file_NoExt)):

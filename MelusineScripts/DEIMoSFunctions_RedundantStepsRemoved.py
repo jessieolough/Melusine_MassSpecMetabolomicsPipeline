@@ -45,6 +45,11 @@ def FindMiddleFileForRTAlignment(ms1_threshold, ms2_threshold, PeakDet_smooth_da
     # middle = "RTAligned_{}".format(middle)
     
     print("middle = ", middle)
+
+    #Make Folder for results for this sample
+    if os.path.exists('Results/{}'.format(middle)):
+        shutil.rmtree('Results/{}'.format(middle))
+    os.makedirs('Results/{}'.format(middle))
     
     #Load in the middle file for downstream RT alginment
     rtalign_data = {}
@@ -72,10 +77,10 @@ def FindMiddleFileForRTAlignment(ms1_threshold, ms2_threshold, PeakDet_smooth_da
 
 def DetectPeaks(file_NoExt, sample_data, PeakDet_smooth_data_radius, PeakDet_persistent_homology_radius, MS2DataPresent):
 
-    #Make Folder for results for this sample
-    if os.path.exists('Results/{}'.format(file_NoExt)):
-        shutil.rmtree('Results/{}'.format(file_NoExt))
-    os.makedirs('Results/{}'.format(file_NoExt))
+    # #Make Folder for results for this sample
+    # if os.path.exists('Results/{}'.format(file_NoExt)):
+    #     shutil.rmtree('Results/{}'.format(file_NoExt))
+    # os.makedirs('Results/{}'.format(file_NoExt))
     
     #Make a folder for this sample for all Peak Detection results to go in to
     if os.path.exists('Results/{}/PeakDetection'.format(file_NoExt)):
@@ -136,13 +141,18 @@ def DetectPeaks(file_NoExt, sample_data, PeakDet_smooth_data_radius, PeakDet_per
 def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, rtalign_persisHomology_thres, 
                            rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
                            rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol, 
-                           SaveRTAlignmentDataFiles, SaveRTAlignmentGraphs, MS2DataPresent):
+                           SaveRTAlignmentDataFiles, SaveRTAlignmentGraphs, MS2DataPresent, 
+                           PeakDet_smooth_data_radius, PeakDet_persistent_homology_radius):
 
     if SaveRTAlignmentDataFiles is True or SaveRTAlignmentGraphs is True:
         #Make a folder for this sample for all Peak Detection results to go in to
         if os.path.exists('Results/{}/RetentionTimeAlignmentAndPeakDetection'.format(file_NoExt)):
             shutil.rmtree('Results/{}/RetentionTimeAlignmentAndPeakDetection'.format(file_NoExt))
         os.mkdir('Results/{}/RetentionTimeAlignmentAndPeakDetection'.format(file_NoExt))
+
+    #Detect peaks to use in RT Alignment
+    sample_data = DetectPeaks(file_NoExt, sample_data, PeakDet_smooth_data_radius,
+                              PeakDet_persistent_homology_radius, MS2DataPresent)
     
     if SaveRTAlignmentGraphs is True:
         #Visualise misalignment
@@ -162,21 +172,6 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, rtalign_persis
         plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1_InitialMisalignment.png'.format(file_NoExt))
         plt.close()
 
-        ToAlign_ms1 = deimos.collapse(sample_data['ms1_peaks'], keep='retention_time').sort_values(by='retention_time')
-        Ref_ms1 = deimos.collapse(rtalign_data['ms1_peaks'], keep='retention_time').sort_values(by='retention_time')
-        # Visualize
-        fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-        ax.fill_between(ToAlign_ms1['retention_time'], ToAlign_ms1['intensity'], color='C0', alpha=0.5, label='A')
-        ax.fill_between(Ref_ms1['retention_time'], Ref_ms1['intensity'], color='C3', alpha=0.5, label='B')
-        ax.set_xlabel('Retention Time (MS1)', fontweight='bold')
-        ax.set_ylabel('Intensity', fontweight='bold')
-        ax.set_xlim(0, None)
-        ax.set_ylim(0, None)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1Peaks_InitialMisalignment.png'.format(file_NoExt))
-        plt.close()
-
         if MS2DataPresent is True:
             ToAlign_ms2 = deimos.collapse(sample_data['ms2'], keep='retention_time').sort_values(by='retention_time')
             Ref_ms2 = deimos.collapse(rtalign_data['ms2'], keep='retention_time').sort_values(by='retention_time')
@@ -191,21 +186,6 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, rtalign_persis
             plt.legend()
             plt.tight_layout()
             plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2_InitialMisalignment.png'.format(file_NoExt))
-            plt.close()
-
-            ToAlign_ms2 = deimos.collapse(sample_data['ms2_peaks'], keep='retention_time').sort_values(by='retention_time')
-            Ref_ms2 = deimos.collapse(rtalign_data['ms2_peaks'], keep='retention_time').sort_values(by='retention_time')
-            # Visualize
-            fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-            ax.fill_between(ToAlign_ms2['retention_time'], ToAlign_ms2['intensity'], color='C0', alpha=0.5, label='A')
-            ax.fill_between(Ref_ms2['retention_time'], Ref_ms2['intensity'], color='C3', alpha=0.5, label='B')
-            ax.set_xlabel('Retention Time (ms2)', fontweight='bold')
-            ax.set_ylabel('Intensity', fontweight='bold')
-            ax.set_xlim(0, None)
-            ax.set_ylim(0, None)
-            plt.legend()
-            plt.tight_layout()
-            plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2Peaks_InitialMisalignment.png'.format(file_NoExt))
             plt.close()
 
     # Downselect by persistence
@@ -315,30 +295,13 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, rtalign_persis
             plt.close()
     
     #Apply Alignment
-    #TODO: see if aligning peaks as I have done below is ok (instead of the raw data)
-    sample_data['ms1_peaks']['retention_time'] = spl_ms1(sample_data['ms1_peaks']['retention_time'])
+    # sample_data['ms1_peaks']['retention_time'] = spl_ms1(sample_data['ms1_peaks']['retention_time'])
     sample_data['ms1']['retention_time'] = spl_ms1(sample_data['ms1']['retention_time'])
     if MS2DataPresent is True:
-        sample_data['ms2_peaks']['retention_time'] = spl_ms2(sample_data['ms2_peaks']['retention_time'])
+        # sample_data['ms2_peaks']['retention_time'] = spl_ms2(sample_data['ms2_peaks']['retention_time'])
         sample_data['ms2']['retention_time'] = spl_ms1(sample_data['ms2']['retention_time'])
 
     if SaveRTAlignmentGraphs is True:
-        # Collapse
-        rt_aligned_ms1 = deimos.collapse(sample_data['ms1_peaks'], keep='retention_time').sort_values(by='retention_time')
-        Ref_ms1 = deimos.collapse(rtalign_data['ms1_peaks'], keep='retention_time').sort_values(by='retention_time')
-        
-        # Visualize
-        fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-        ax.fill_between(rt_aligned_ms1['retention_time'], rt_aligned_ms1['intensity'], color='C0', alpha=0.5, label='spl(A)')
-        ax.fill_between(Ref_ms1['retention_time'], Ref_ms1['intensity'], color='C3', alpha=0.5, label='B')
-        ax.set_xlabel('Retention Time (MS1)', fontweight='bold')
-        ax.set_ylabel('Intensity', fontweight='bold')
-        ax.set_xlim(0, None)
-        ax.set_ylim(0, None)
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS1Peaks_RetentionTimeAlgined.png'.format(file_NoExt))
-        plt.close()
 
         rt_aligned_ms1 = deimos.collapse(sample_data['ms1'], keep='retention_time').sort_values(by='retention_time')
         Ref_ms1 = deimos.collapse(rtalign_data['ms1'], keep='retention_time').sort_values(by='retention_time')
@@ -357,20 +320,6 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, rtalign_persis
         plt.close()
 
         if MS2DataPresent is True:
-            rt_aligned_ms2 = deimos.collapse(sample_data['ms2_peaks'], keep='retention_time').sort_values(by='retention_time')
-            Ref_ms2 = deimos.collapse(rtalign_data['ms2_peaks'], keep='retention_time').sort_values(by='retention_time')
-            
-            fig, ax = plt.subplots(1, dpi=150, facecolor='w')
-            ax.fill_between(rt_aligned_ms2['retention_time'], rt_aligned_ms2['intensity'], color='C0', alpha=0.5, label='spl(A)')
-            ax.fill_between(Ref_ms2['retention_time'], Ref_ms2['intensity'], color='C3', alpha=0.5, label='B')
-            ax.set_xlabel('Retention Time (MS2)', fontweight='bold')
-            ax.set_ylabel('Intensity', fontweight='bold')
-            ax.set_xlim(0, None)
-            ax.set_ylim(0, None)
-            plt.legend()
-            plt.tight_layout()
-            plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2Peaks_RetentionTimeAlgined.png'.format(file_NoExt))
-            plt.close()
 
             rt_aligned_ms2 = deimos.collapse(sample_data['ms2'], keep='retention_time').sort_values(by='retention_time')
             Ref_ms2 = deimos.collapse(rtalign_data['ms2'], keep='retention_time').sort_values(by='retention_time')
@@ -387,86 +336,16 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, rtalign_persis
             plt.savefig('Results/{}/RetentionTimeAlignmentAndPeakDetection/MS2Peaks_RetentionTimeAlgined.png'.format(file_NoExt))
             plt.close()
 
-    if SaveRTAlignmentDataFiles is True:
-        #Save Data as HD5 file
-        deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), sample_data['ms1'], key='ms1')
-        if MS2DataPresent is True:
-            deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), sample_data['ms2'], key='ms2')
+    # if SaveRTAlignmentDataFiles is True:
+    #     #Save Data as HD5 file
+    #     deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), sample_data['ms1'], key='ms1')
+    #     if MS2DataPresent is True:
+    #         deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), sample_data['ms2'], key='ms2')
 
-    return sample_data
-        
-
-def DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
-                   isotope_map_delta, isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, file_NoExt, 
-                   isotope_min_no_isotopes, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
-                   isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, 
-                   isotope_plot_slice_rt_high, SaveIsotopeDetDataFiles, SaveIsotopeDetGraphs): 
-
-    # Partition the data
-    partitions = deimos.partition(sample_data['ms1_peaks'], size=isotope_partition_size, 
-                                  overlap=isotope_partition_overlap)
-    
-    # Map isotope detection over partitions
-    isotopes = partitions.map(deimos.isotopes.detect,
-                              dims=['mz', 'drift_time', 'retention_time'],
-                              tol=isotope_map_mz_dt_rt_tol,
-                              delta=isotope_map_delta,
-                              max_isotopes=isotope_map_max_isotopes,
-                              max_charge=isotope_map_max_charges,
-                              max_error=isotope_map_max_error)
-
-    if SaveIsotopeDetDataFiles is True or SaveIsotopeDetGraphs is True:
-        #Make a folder for this sample for Isotope Detection results to go in to
-        if os.path.exists('Results/{}/IsotopeDetection'.format(file_NoExt)):
-            shutil.rmtree('Results/{}/IsotopeDetection'.format(file_NoExt))
-        os.mkdir('Results/{}/IsotopeDetection'.format(file_NoExt))
-
-    if SaveIsotopeDetDataFiles is True:
-        isotopes.to_csv('Results/{}/IsotopeDetection/isotopes.csv'.format(file_NoExt), index=False) 
-
-    if SaveIsotopeDetGraphs is True:
-        #Consider isotopic signatures with at least 3 members
-        isotopes_graph = isotopes.loc[isotopes['n'] >= isotope_min_no_isotopes, :].sort_values(by='intensity', ascending=False).head(5)
-        
-        for index, row in isotopes_graph.iterrows():
-            
-            #Following Peak detection steps to subset data within the mass range of the isotope
-            ms1_iso_ss = deimos.slice(sample_data['ms1'], by='mz', 
-                                    low = row['mz']-isotope_slice_mz_low, 
-                                    high = row['mz']+isotope_slice_mz_high)
-            
-            # Get maximal data point
-            scan_id_i, rt_i, dt_i, mz_i, intensity_i = ms1_iso_ss.loc[ms1_iso_ss['intensity'] == ms1_iso_ss['intensity'].max(), :].round(1).values[0] #type: ignore
-        
-            #The ms1_iso data is loaded in the Peak Detection section
-            feature = deimos.slice(ms1_iso_ss, by=['mz', 'drift_time', 'retention_time'],
-                                low=[mz_i - isotope_plot_slice_mz_low, 
-                                    dt_i - isotope_plot_slice_dt_low, 
-                                    rt_i - isotope_plot_slice_rt_low],
-                                high=[mz_i + isotope_plot_slice_mz_high, 
-                                    dt_i + isotope_plot_slice_dt_high, 
-                                    rt_i + isotope_plot_slice_rt_high])
-            
-            ax = deimos.plot.multipanel(feature, dpi=300)
-            for i in isotopes_graph.loc[index, 'mz_iso']:
-                ax['mz'].scatter(i, 0, s=10, color='C3', zorder=5)
-            
-            plt.tight_layout()
-            plt.savefig('Results/{}/IsotopeDetection/{}_isotope_feature_plot.png'.format(file_NoExt, index))
-            #Save memory space
-            plt.close()
-
-    #Merge isotope information info ms1 peaks info (can be matched by index)
-    #Make index a column to allow merging
-    isotopes = isotopes.apply(pd.to_numeric, errors = "ignore")
-    isotopes['idx'] = isotopes['idx'].astype(int)
-    sample_data['ms1_peaks'] = sample_data['ms1_peaks'].reset_index(names='idx')
-    sample_data['ms1_peaks'] = sample_data['ms1_peaks'].apply(pd.to_numeric, errors = "ignore")
-    sample_data['ms1_peaks'] = pd.merge(sample_data['ms1_peaks'], isotopes, 
-                                        on='idx', how='left')
-    sample_data['ms1_peaks'].drop('idx', axis=1, inplace=True)
-
-    #TODO: Make sure that the charge column in the isotopes output corresponds to the polarity of the data being analysed
+    # Delete 'ms1_peaks' and 'ms2_peaks' keys from sample_data if they exist
+    # --> peak info can be properly generated from the RT Aligned raw data
+    sample_data.pop('ms1_peaks', None)
+    sample_data.pop('ms2_peaks', None)
 
     return sample_data
     
@@ -559,12 +438,30 @@ def ExtractMS2Spectra(sample_data, file_NoExt, MS2Extract_intensity_thres, MS2Ex
         return y
 
     # Create a new dataframe with only the required columns
+    print("Column names:")
+    print(sample_data['ms1_peaks'].columns)
+    print(sample_data['ms2_peaks'].columns)
+    print(sample_data['ms1'].columns)
+    print(sample_data['ms2'].columns)
+    sample_data['ms1'] = sample_data['ms1'][['mz', 'drift_time', 'retention_time', 'intensity']]
+    sample_data['ms2'] = sample_data['ms2'][['mz', 'drift_time', 'retention_time', 'intensity']]
+    # Select columns, using 'intensity_x' if 'intensity' is missing
+    if 'intensity' in sample_data['ms1_peaks'].columns:
+        sample_data['ms1_peaks'] = sample_data['ms1_peaks'][['mz', 'drift_time', 'retention_time', 'intensity', 'persistence']]
+    elif 'intensity_x' in sample_data['ms1_peaks'].columns:
+        sample_data['ms1_peaks'] = sample_data['ms1_peaks'][['mz', 'drift_time', 'retention_time', 'intensity_x', 'persistence']]
+        sample_data['ms1_peaks'] = sample_data['ms1_peaks'].rename(columns={'intensity_x': 'intensity'})
+    else:
+        raise KeyError("Neither 'intensity' nor 'intensity_x' found in ms1_peaks columns")
+    sample_data['ms2_peaks'] = sample_data['ms2_peaks'][['mz', 'drift_time', 'retention_time', 'intensity', 'persistence']]
     ms1_peak_to_deconvolute = sample_data['ms1_peaks']#[['scanId', 'retention_time', 'drift_time', 'mz', 'persistence']]
     print("Column names:")
     print(sample_data['ms1_peaks'].columns)
     print(sample_data['ms2_peaks'].columns)
     print(sample_data['ms1'].columns)
     print(sample_data['ms2'].columns)
+    print(len(sample_data['ms1_peaks']), len(sample_data['ms1']), 
+          len(sample_data['ms2_peaks']), len(sample_data['ms2']))
     
     #Deconvolution
     decon = deimos.deconvolution.MS2Deconvolution(ms1_peak_to_deconvolute, sample_data['ms1'], 
@@ -619,7 +516,80 @@ def ExtractMS2Spectra(sample_data, file_NoExt, MS2Extract_intensity_thres, MS2Ex
             plt.close()  
         
     return res_final
+
+def DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
+                   isotope_map_delta, isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, file_NoExt, 
+                   isotope_min_no_isotopes, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
+                   isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, 
+                   isotope_plot_slice_rt_high, SaveIsotopeDetDataFiles, SaveIsotopeDetGraphs, res_final): 
+
+    # Partition the data
+    partitions = deimos.partition(sample_data['ms1_peaks'], size=isotope_partition_size, 
+                                  overlap=isotope_partition_overlap)
     
+    # Map isotope detection over partitions
+    isotopes = partitions.map(deimos.isotopes.detect,
+                              dims=['mz', 'drift_time', 'retention_time'],
+                              tol=isotope_map_mz_dt_rt_tol,
+                              delta=isotope_map_delta,
+                              max_isotopes=isotope_map_max_isotopes,
+                              max_charge=isotope_map_max_charges,
+                              max_error=isotope_map_max_error)
+
+    if SaveIsotopeDetDataFiles is True or SaveIsotopeDetGraphs is True:
+        #Make a folder for this sample for Isotope Detection results to go in to
+        if os.path.exists('Results/{}/IsotopeDetection'.format(file_NoExt)):
+            shutil.rmtree('Results/{}/IsotopeDetection'.format(file_NoExt))
+        os.mkdir('Results/{}/IsotopeDetection'.format(file_NoExt))
+
+    if SaveIsotopeDetDataFiles is True:
+        isotopes.to_csv('Results/{}/IsotopeDetection/isotopes.csv'.format(file_NoExt), index=False) 
+
+    if SaveIsotopeDetGraphs is True:
+        #Consider isotopic signatures with at least 3 members
+        isotopes_graph = isotopes.loc[isotopes['n'] >= isotope_min_no_isotopes, :].sort_values(by='intensity', ascending=False).head(5)
+        
+        for index, row in isotopes_graph.iterrows():
+            
+            #Following Peak detection steps to subset data within the mass range of the isotope
+            ms1_iso_ss = deimos.slice(sample_data['ms1'], by='mz', 
+                                    low = row['mz']-isotope_slice_mz_low, 
+                                    high = row['mz']+isotope_slice_mz_high)
+            
+            # Get maximal data point
+            scan_id_i, rt_i, dt_i, mz_i, intensity_i = ms1_iso_ss.loc[ms1_iso_ss['intensity'] == ms1_iso_ss['intensity'].max(), :].round(1).values[0] #type: ignore
+        
+            #The ms1_iso data is loaded in the Peak Detection section
+            feature = deimos.slice(ms1_iso_ss, by=['mz', 'drift_time', 'retention_time'],
+                                low=[mz_i - isotope_plot_slice_mz_low, 
+                                    dt_i - isotope_plot_slice_dt_low, 
+                                    rt_i - isotope_plot_slice_rt_low],
+                                high=[mz_i + isotope_plot_slice_mz_high, 
+                                    dt_i + isotope_plot_slice_dt_high, 
+                                    rt_i + isotope_plot_slice_rt_high])
+            
+            ax = deimos.plot.multipanel(feature, dpi=300)
+            for i in isotopes_graph.loc[index, 'mz_iso']:
+                ax['mz'].scatter(i, 0, s=10, color='C3', zorder=5)
+            
+            plt.tight_layout()
+            plt.savefig('Results/{}/IsotopeDetection/{}_isotope_feature_plot.png'.format(file_NoExt, index))
+            #Save memory space
+            plt.close()
+
+    #Merge isotope information info ms1 peaks info (can be matched by index)
+    #Make index a column to allow merging
+    isotopes = isotopes.apply(pd.to_numeric, errors = "ignore")
+    isotopes['idx'] = isotopes['idx'].astype(int)
+    sample_data['ms1_peaks'] = sample_data['ms1_peaks'].reset_index(names='idx')
+    sample_data['ms1_peaks'] = sample_data['ms1_peaks'].apply(pd.to_numeric, errors = "ignore")
+    sample_data['ms1_peaks'] = pd.merge(sample_data['ms1_peaks'], isotopes, 
+                                        on='idx', how='left')
+    sample_data['ms1_peaks'].drop('idx', axis=1, inplace=True)
+
+    #TODO: Make sure that the charge column in the isotopes output corresponds to the polarity of the data being analysed
+
+    return sample_data, res_final
         
 def AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_mergeFeatures_mz_dt_rt_tol, 
                                                   file_NoExt):
