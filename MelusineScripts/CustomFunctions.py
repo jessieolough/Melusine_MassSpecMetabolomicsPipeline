@@ -14,11 +14,73 @@ import matplotlib.pyplot as plt #Create plot outputs
 # import time #Find the creation date of files 
 import pandas as pd #Handle dataframes
 from numpy import trapz #Calculate area under line for Gap Filling
-import datetime #Get current date and time
+from datetime import datetime #Get current date and time
 import warnings
 
 # Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
+def CollectPeakShapeData(sample_data, res_final, PeakShapeCorr_mz_tol, PeakShapeCorr_RT_tol, 
+                         PeakShapeCorr_DT_tol):
+
+    #Add new column to contain the Peak Shape information
+    res_final['Peak_Shape'] = [None]*len(res_final)
+
+    #Loop through each peak and collect peak shape information
+    for index, row in sample_data['ms1_peaks'].iterrows():
+        mz = row['mz']
+        RT = row['retention_time']
+        DT = row['drift_time']
+
+        #Subset raw data within user-specified tolerances to find peak info
+        #Calculate m/z uncertainty based off ppm tolerance (mz_tol)
+        # uncertainty = round((mz/1000000)*PeakShapeCorr_mz_tol, 5)
+        # ms1raw_subset = sample_data['ms1'].loc[(sample_data['ms1']["mz"] >= mz-uncertainty) & (sample_data['ms1']["mz"] <= mz+uncertainty)]
+        ms1raw_subset = sample_data['ms1'][sample_data['ms1']["mz"] == mz]
+        ms1raw_subset = ms1raw_subset[ms1raw_subset["drift_time"] == DT]
+        ms1raw_subset = ms1raw_subset.loc[(ms1raw_subset["retention_time"] >= RT-PeakShapeCorr_RT_tol) & (ms1raw_subset["retention_time"] <= RT+PeakShapeCorr_RT_tol)]
+        # ms1raw_subset = ms1raw_subset.loc[(ms1raw_subset["drift_time"] >= RT-PeakShapeCorr_DT_tol) & (ms1raw_subset["drift_time"] <= RT+PeakShapeCorr_DT_tol)]
+
+        #Get average intensity at each RT time point (potentially across different m/z and drift time values)
+        # fig, axes = plt.subplots(1, 3, figsize=(14, 6))
+
+        # # mz vs intensity
+        # axes[0].plot(ms1raw_subset['mz'], ms1raw_subset['intensity'], marker='o', linestyle='-')
+        # axes[0].set_xlabel('m/z')
+        # axes[0].set_ylabel('Intensity')
+        # axes[0].set_title('Peak Shape: m/z vs Intensity')
+
+        # # drift_time vs intensity
+        # axes[1].plot(ms1raw_subset['drift_time'], ms1raw_subset['intensity'], marker='o', linestyle='-')
+        # axes[1].set_xlabel('Drift Time')
+        # axes[1].set_ylabel('Intensity')
+        # axes[1].set_title('Peak Shape: Drift Time vs Intensity')
+
+        # # retention_time vs intensity
+        # axes[2].plot(ms1raw_subset['retention_time'], ms1raw_subset['intensity'], marker='o', linestyle='-')
+        # axes[2].set_xlabel('Retention Time')
+        # axes[2].set_ylabel('Intensity')
+        # axes[2].set_title('Peak Shape: Retention Time vs Intensity')
+
+        # plt.tight_layout()
+        # plt.savefig(f"PeakShape_mz{mz}_RT{RT}_DT{DT}_RTTol{PeakShapeCorr_RT_tol}_mzTol{PeakShapeCorr_mz_tol}_DTTol{PeakShapeCorr_DT_tol}.png")
+        # plt.close()
+
+        
+        ms1raw_subset = ms1raw_subset.groupby('retention_time').mean()
+        ms1raw_subset = ms1raw_subset.reset_index()
+
+        #Round all values in the subset raw data --> improve downstream RT matching
+        ms1raw_subset = ms1raw_subset.round(3)     
+         
+        #Convert relevent information for Peak Shape into numpy array
+        ms1raw_subset = ms1raw_subset[['retention_time', 'intensity']]
+        ms1raw_subset = ms1raw_subset.to_numpy()
+
+        #Add the peak shape information into the row in res_final corresponding to this MS1 peak
+        res_final.at[index, 'Peak_Shape'] = ms1raw_subset
+
+    return sample_data, res_final
 
 
 def GapFillingSteps(ccs_cal_pos, drifts_stripped, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_tol, 

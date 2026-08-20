@@ -117,6 +117,11 @@ rtalign_partition_overlap = 0.25
 rtalign_zipmap_thres = 1E3
 rtalign_zipmap_mz_dt_rt_tol = [20E-6, 0.03, 2]
 
+#Peak Shape Correlation
+PeakShapeCorr_mz_tol = 5 #ppm
+PeakShapeCorr_RT_tol = 3.0 #minutes
+PeakShapeCorr_DT_tol = 30 #milliseconds
+
 #Agglomerative Clustering
 agglo_mergeFeatures_mz_dt_rt_tol = [2e-05, 0.03, 0.3]
 agglo_multiSampPart_size = 100
@@ -176,25 +181,29 @@ class CustomError(Exception):
     pass
 
 #Set whether the pipeline will undergo MS2 data processing or not
-MS2DataPresent = True
-#Peak Detection
+MS2DataPresent = False
+##Peak Detection
+#Decide whether to so this within the script or not (e.g., in case they have already been thresholded in previous steps)
+ThresholdDataWithinScript = True
 ms1_threshold = 500
 if MS2DataPresent is True:
     ms2_threshold = 500
 else:
     ms2_threshold = None
 SaveDetectedPeaksData = True
-#Retention Time Alignment
-PerformRTAlignment = True
+##Retention Time Alignment
+PerformRTAlignment = False
 SaveRTAlignmentDataFiles = True
 SaveRTAlignmentGraphs = True
-#Isotope Detection
+##Isotope Detection
 PerformIsotopeDetection = False
 SaveIsotopeDetDataFiles = True
 SaveIsotopeDetGraphs = True
-#MS2 Extraction
-SaveMS2ExtractDataFiles = True
+##MS2 Extraction
+SaveMS2ExtractDataFiles = False
 SaveMS2ExtractGraphs = False
+##Peak Shape Correlation
+PerformPeakShapeCorrelation = True
 
 if __name__ == "__main__":
     
@@ -271,6 +280,7 @@ if __name__ == "__main__":
                 shutil.rmtree('Results/{}'.format(file_NoExt))
             os.makedirs('Results/{}'.format(file_NoExt))
 
+
         if file_NoExt == middle:
             sample_data = rtalign_data.copy()#type: ignore
         else:
@@ -279,24 +289,21 @@ if __name__ == "__main__":
             sample_data['ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
             sample_data['ms1'] = sample_data['ms1'].apply(pd.to_numeric, errors = "ignore")
 
-            #Threshold the data
-            sample_data['ms1'] = deimos.threshold(sample_data['ms1'], threshold=ms1_threshold)
-            print(sample_data['ms1'])
+            if ThresholdDataWithinScript is True:
+                #Threshold the data
+                sample_data['ms1'] = deimos.threshold(sample_data['ms1'], threshold=ms1_threshold)
 
             if MS2DataPresent is True:
                 sample_data['ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
                 sample_data['ms2'] = sample_data['ms2'].apply(pd.to_numeric, errors = "ignore")
-                sample_data['ms2'] = deimos.threshold(sample_data['ms2'], threshold=ms2_threshold)#type: ignore
-                print(sample_data['ms2'])
+                if ThresholdDataWithinScript is True:
+                    sample_data['ms2'] = deimos.threshold(sample_data['ms2'], threshold=ms2_threshold)#type: ignore
 
         #If desired, perform RT alignment on the sample
         if PerformRTAlignment is True:
             if file_NoExt == middle:
                 # No need to align the reference file
                 print("Retention Time not performed as this is the reference file")
-                #Remove persistence column as it is not required for downstream processes
-                # sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence'], errors='ignore')
-                # sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence'], errors='ignore')
             else:
                 sample_data = DEIMoSFunctions_RedundantStepsRemoved.RetentionTimeAlignment(file_NoExt, 
                                                                                            sample_data, 
@@ -308,15 +315,8 @@ if __name__ == "__main__":
                            PeakDet_persistent_homology_radius
                            )
 
-                #Remove persistence and persistence_ratio columns as these are not required for downstream processes
-                # sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence_ratio'], errors='ignore')
-                # if MS2DataPresent is True:
-                #     sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence_ratio'], errors='ignore')
         elif PerformRTAlignment is False:
             print("Retention Time Alignment not performed")
-            #Remove persistence column as it is not required for downstream processes
-            # sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence'], errors='ignore')
-            # sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence'], errors='ignore')
         else:
             raise CustomError("""Set PerformRTAlignment as True or False to indicate whether you want to include this step.""")
 
@@ -346,10 +346,9 @@ if __name__ == "__main__":
         else:
             res_final = sample_data['ms1_peaks']
 
-        print(sample_data['ms1'])
-        print(sample_data['ms1_peaks'])
-        print(sample_data['ms2'])
-        print(sample_data['ms2_peaks'])
+        sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence'])
+        if MS2DataPresent is True:
+            sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence'])
 
         if PerformIsotopeDetection is True:
             print("Performing Isotope Detection")
@@ -365,17 +364,37 @@ if __name__ == "__main__":
             print("Isotope Detection not performed")
         else:
             raise CustomError("""Set PerformIsotopeDetection as True or False to indicate whether you want to include this step.""")
-        
+
+        #Previous merging steps cause columns with the same names to be renamed
+        # --> need to rename some of these columns (keeping those with the ms1_peak data with their original names)
+        res_final.rename(columns={'intensity_x': 'intensity', 'mz_x': 'mz'}, inplace=True)
+
+        #Collect the Peak Shape info here for downstream correlation analysis
+        if PerformPeakShapeCorrelation is True:
+            print("Collecting Peak Shape Data")
+
+            sample_data, res_final = CustomFunctions.CollectPeakShapeData(sample_data, res_final, PeakShapeCorr_mz_tol, 
+                                                                          PeakShapeCorr_RT_tol, PeakShapeCorr_DT_tol)
+
+            print("Peak Shape Data Collected")
+        elif PerformPeakShapeCorrelation is False:
+            print("Peak Shape Correlation not performed")
+        else:
+            raise CustomError("""Set PerformPeakShapeCorrelation as True or False to indicate whether you want to include this step.""")
+
         #Make a folder for this sample for all Agglomerative Clustering results to go in to
         if os.path.exists('Results/{}/AgglomerativeClustering'.format(file_NoExt)):
             shutil.rmtree('Results/{}/AgglomerativeClustering'.format(file_NoExt))
         os.mkdir('Results/{}/AgglomerativeClustering'.format(file_NoExt))
+
+        del sample_data
         
         loopcount = DEIMoSFunctions_RedundantStepsRemoved.AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_mergeFeatures_mz_dt_rt_tol, 
                                                   file_NoExt)
+        del res_final
         print("AgglomerativeClusteringConcatenateNewPeakData() complete")
 
-        del sample_data
+    del rtalign_data, middle
 
     print("===============================")
     print("DEIMoS Script stopTime:", datetime.now())
