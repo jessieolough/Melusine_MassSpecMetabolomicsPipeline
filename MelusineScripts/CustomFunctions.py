@@ -28,9 +28,6 @@ def InspectRawDataAroundMS1Peaks(sample_data, res_final, PeakShapeCorr_mz_tol, P
         #Add new column to contain the Peak Shape information
         res_final['Peak_Shape'] = [None]*len(res_final)      
 
-    #TODO: remove after testing
-    sample_data['ms1_peaks'] = sample_data['ms1_peaks'].iloc[70:90]
-
     #Loop through each peak and collect peak shape information
     for index, row in sample_data['ms1_peaks'].iterrows():
         mz = row['mz']
@@ -186,65 +183,63 @@ def InspectRawDataAroundMS1Peaks(sample_data, res_final, PeakShapeCorr_mz_tol, P
         ]
         ##############################################
 
-        # Get average intensity at each RT time point (potentially across different m/z and drift time values)
-        fig, axes = plt.subplots(1, 4, figsize=(16, 6))
+        # # Get average intensity at each RT time point (potentially across different m/z and drift time values)
+        # fig, axes = plt.subplots(1, 4, figsize=(16, 6))
 
-        # retention_time (user tolerance) vs intensity
-        axes[0].plot(ms1raw_subset_RTTol['retention_time'], ms1raw_subset_RTTol['intensity'], marker='o', linestyle='-')
-        axes[0].set_xlabel('Retention Time')
-        axes[0].set_ylabel('Intensity')
-        axes[0].set_title('Peak Shape: Retention Time \n(User Tolerance) vs Intensity')
-        axes[0].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
-        axes[0].legend()
+        # # retention_time (user tolerance) vs intensity
+        # axes[0].plot(ms1raw_subset_RTTol['retention_time'], ms1raw_subset_RTTol['intensity'], marker='o', linestyle='-')
+        # axes[0].set_xlabel('Retention Time')
+        # axes[0].set_ylabel('Intensity')
+        # axes[0].set_title('Peak Shape: Retention Time \n(User Tolerance) vs Intensity')
+        # axes[0].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+        # axes[0].legend()
 
-        # retention_time (local minima, low intensity thres only) vs intensity
-        axes[1].plot(ms1raw_subset_IntThresOnly['retention_time'], ms1raw_subset_IntThresOnly['intensity'], marker='o', linestyle='-')
-        axes[1].set_xlabel('Retention Time')
-        axes[1].set_ylabel('Intensity')
-        axes[1].set_title('Peak Shape: Retention Time \n(Local Minima, low intensity thres only) vs Intensity')
-        axes[1].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
-        axes[1].legend()
+        # # retention_time (local minima, low intensity thres only) vs intensity
+        # axes[1].plot(ms1raw_subset_IntThresOnly['retention_time'], ms1raw_subset_IntThresOnly['intensity'], marker='o', linestyle='-')
+        # axes[1].set_xlabel('Retention Time')
+        # axes[1].set_ylabel('Intensity')
+        # axes[1].set_title('Peak Shape: Retention Time \n(Local Minima, low intensity thres only) vs Intensity')
+        # axes[1].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+        # axes[1].legend()
 
-        # retention_time (local minima, high intensity sensitive) vs intensity
-        axes[2].plot(ms1raw_subset_IntSens['retention_time'], ms1raw_subset_IntSens['intensity'], marker='o', linestyle='-')
-        axes[2].set_xlabel('Retention Time')
-        axes[2].set_ylabel('Intensity')
-        axes[2].set_title('Peak Shape: Retention Time \n(Local Minima, low intensity thres with \nhigh intensity sensitive) vs Intensity')
-        axes[2].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
-        axes[2].legend()
+        # # retention_time (local minima, high intensity sensitive) vs intensity
+        # axes[2].plot(ms1raw_subset_IntSens['retention_time'], ms1raw_subset_IntSens['intensity'], marker='o', linestyle='-')
+        # axes[2].set_xlabel('Retention Time')
+        # axes[2].set_ylabel('Intensity')
+        # axes[2].set_title('Peak Shape: Retention Time \n(Local Minima, low intensity thres with \nhigh intensity sensitive) vs Intensity')
+        # axes[2].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+        # axes[2].legend()
 
-        # retention_time (local minima, low intensity thres only) vs intensity
-        axes[3].plot(ms1raw_subset_PeakRiseSens['retention_time'], ms1raw_subset_PeakRiseSens['intensity'], marker='o', linestyle='-')
-        axes[3].set_xlabel('Retention Time')
-        axes[3].set_ylabel('Intensity')
-        axes[3].set_title('Peak Shape: Retention Time \n(Local Minima, Peak Rise Sensitive) vs Intensity')
-        axes[3].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
-        axes[3].legend()
+        # # retention_time (local minima, low intensity thres only) vs intensity
+        # axes[3].plot(ms1raw_subset_PeakRiseSens['retention_time'], ms1raw_subset_PeakRiseSens['intensity'], marker='o', linestyle='-')
+        # axes[3].set_xlabel('Retention Time')
+        # axes[3].set_ylabel('Intensity')
+        # axes[3].set_title('Peak Shape: Retention Time \n(Local Minima, Peak Rise Sensitive) vs Intensity')
+        # axes[3].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+        # axes[3].legend()
 
-        # Add overall super title with mz, RT, DT, and intensity
-        fig.subplots_adjust(top=0.85)
-        fig.suptitle(f"Peak Shape Data: mz={mz:.5f}, RT={RT:.3f}, DT={DT:.3f}, Intensity={intensity:.0f}", fontsize=14)
+        # # Add overall super title with mz, RT, DT, and intensity
+        # fig.subplots_adjust(top=0.85)
+        # fig.suptitle(f"Peak Shape Data: mz={mz:.5f}, RT={RT:.3f}, DT={DT:.3f}, Intensity={intensity:.0f}", fontsize=14)
 
-        plt.tight_layout()
-        plt.savefig(f"Results/PeakShape_Idx{index}_mz{mz}_RT{RT}_DT{DT}.png", bbox_inches='tight')
-        plt.show()
-        plt.close()
+        # plt.tight_layout()
+        # plt.savefig(f"Results/PeakShape_Idx{index}_mz{mz}_RT{RT}_DT{DT}.png", bbox_inches='tight')
+        # # plt.show()
+        # plt.close()
 
-        # if PerformPeakShapeCorrelation is True:
-            # ms1raw_subset = ms1raw_subset.groupby('retention_time').mean()
-            # ms1raw_subset = ms1raw_subset.reset_index()
+        if PerformPeakShapeCorrelation is True:
+            ms1raw_subset = ms1raw_subset_PeakRiseSens.groupby('retention_time').mean()
+            ms1raw_subset = ms1raw_subset.reset_index()
 
-            # #Round all values in the subset raw data --> improve downstream RT matching
-            # ms1raw_subset = ms1raw_subset.round(3)     
+            #Round all values in the subset raw data --> improve downstream RT matching
+            ms1raw_subset = ms1raw_subset.round(3)     
             
-            # #Convert relevent information for Peak Shape into numpy array
-            # ms1raw_subset = ms1raw_subset[['retention_time', 'intensity']]
-            # ms1raw_subset = ms1raw_subset.to_numpy()
+            #Convert relevent information for Peak Shape into numpy array
+            ms1raw_subset = ms1raw_subset[['retention_time', 'intensity']]
+            ms1raw_subset = ms1raw_subset.to_numpy()
 
-            # #Add the peak shape information into the row in res_final corresponding to this MS1 peak
-            # res_final.at[index, 'Peak_Shape'] = ms1raw_subset
-
-    exit()
+            #Add the peak shape information into the row in res_final corresponding to this MS1 peak
+            res_final.at[index, 'Peak_Shape'] = ms1raw_subset
 
     return sample_data, res_final
 

@@ -161,7 +161,8 @@ def ReadFilesInDirectory():
     
     #TODO: For development only
     # files = files[slice(3)]
-    files = ['POS_FBS_IM_MSMS_40kTF_400TR_4.h5']
+    # files = ['POS_FBS_IM_MSMS_40kTF_400TR_4.h5']
+    files = files[1:3]
 
     print("Files to be processed:")
     for file in files:
@@ -183,6 +184,8 @@ class CustomError(Exception):
 
 #Set whether the pipeline will undergo MS2 data processing or not
 MS2DataPresent = False
+#Set whether the pipeline will start from the raw data or already-collected data in the Results folder
+StartAfterAgglomerativeClustering = False
 ##Peak Detection
 #Decide which method to use
 PeakDetectionMethod = "PersistentHomology" #Type PersistentHomology or MaximumFiltration
@@ -199,7 +202,7 @@ PerformRTAlignment = False
 SaveRTAlignmentDataFiles = True
 SaveRTAlignmentGraphs = True
 ##Isotope Detection
-PerformIsotopeDetection = False
+PerformIsotopeDetection = True
 SaveIsotopeDetDataFiles = True
 SaveIsotopeDetGraphs = True
 ##MS2 Extraction
@@ -220,25 +223,27 @@ if __name__ == "__main__":
     print("===============================")
 
     print("-=-=-=-=-=-=-=-Parameters=-=-=-=-=-=-=-=-=")
-    print("========Peak Detection========")
-    print("Peak Detection Method:", PeakDetectionMethod)
-    print("MS1 threshold:", ms1_threshold)
-    print("MS2 threshold:", ms2_threshold)
-    print("SaveDetectedPeaksData?", SaveDetectedPeaksData)
-    print("===Retention Time Alignment===")
-    print("Retention Time Alignment to be performed?", PerformRTAlignment)
-    print("SaveRTAlignmentDataFiles is:", SaveRTAlignmentDataFiles)
-    print("SaveRTAlignmentGraphs is:", SaveRTAlignmentGraphs)
-    print("=======Isotope Detection======")
-    print("Isotope Detection to be performed?", PerformIsotopeDetection)
-    print("SaveIsotopeDetDataFiles is:", SaveIsotopeDetDataFiles)
-    print("SaveIsotopeDetGraphs is:", SaveIsotopeDetGraphs)
-    print("========MS2 Extraction========")
-    print("MS2DataPresent?", MS2DataPresent)
-    if MS2DataPresent is True:
-        print("SaveMS2ExtractDataFiles is:", SaveMS2ExtractDataFiles)
-        print("SaveMS2ExtractGraphs is:", SaveMS2ExtractGraphs)
-    print("====Peak Shape Correlation====")  
+    print("StartAfterAgglomerativeClustering?", StartAfterAgglomerativeClustering)
+    if StartAfterAgglomerativeClustering is False:
+        print("========Peak Detection========")
+        print("Peak Detection Method:", PeakDetectionMethod)
+        print("MS1 threshold:", ms1_threshold)
+        print("MS2 threshold:", ms2_threshold)
+        print("SaveDetectedPeaksData?", SaveDetectedPeaksData)
+        print("===Retention Time Alignment===")
+        print("Retention Time Alignment to be performed?", PerformRTAlignment)
+        print("SaveRTAlignmentDataFiles is:", SaveRTAlignmentDataFiles)
+        print("SaveRTAlignmentGraphs is:", SaveRTAlignmentGraphs)
+        print("=======Isotope Detection======")
+        print("Isotope Detection to be performed?", PerformIsotopeDetection)
+        print("SaveIsotopeDetDataFiles is:", SaveIsotopeDetDataFiles)
+        print("SaveIsotopeDetGraphs is:", SaveIsotopeDetGraphs)
+        print("========MS2 Extraction========")
+        print("MS2DataPresent?", MS2DataPresent)
+        if MS2DataPresent is True:
+            print("SaveMS2ExtractDataFiles is:", SaveMS2ExtractDataFiles)
+            print("SaveMS2ExtractGraphs is:", SaveMS2ExtractGraphs)
+        print("====Peak Shape Correlation====")  
     print("PerformPeakShapeCorrelation?", PerformPeakShapeCorrelation) 
     print("==========Gap Filling=========") 
     print("PerformGapFilling?", PerformGapFilling)
@@ -301,6 +306,8 @@ if __name__ == "__main__":
                 sample_data = {}
                 sample_data['ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
                 sample_data['ms1'] = sample_data['ms1'].apply(pd.to_numeric, errors = "ignore")
+                #Drop scanId or this messes up the "Get maximal data point" bits
+                sample_data['ms1'] = sample_data['ms1'].drop('scanId', axis = 1)
 
                 if ThresholdDataWithinScript is True:
                     #Threshold the data
@@ -309,10 +316,13 @@ if __name__ == "__main__":
                 if MS2DataPresent is True:
                     sample_data['ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
                     sample_data['ms2'] = sample_data['ms2'].apply(pd.to_numeric, errors = "ignore")
+                    #Drop scanId or this messes up the "Get maximal data point" bits
+                    sample_data['ms2'] = sample_data['ms2'].drop('scanId', axis = 1)
                     if ThresholdDataWithinScript is True:
                         sample_data['ms2'] = deimos.threshold(sample_data['ms2'], threshold=ms2_threshold)#type: ignore
             else:
                 raise CustomError("""Set PeakDetectionMethod as either PersistentHomology or MaximumFiltration only.""")
+
 
         #If desired, perform RT alignment on the sample
         if PerformRTAlignment is True:
@@ -328,7 +338,7 @@ if __name__ == "__main__":
                            rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
                            rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol, 
                            SaveRTAlignmentDataFiles, SaveRTAlignmentGraphs, MS2DataPresent, PeakDet_smooth_data_radius,
-                           PeakDet_persistent_homology_radius
+                           PeakDet_persistent_homology_radius, PeakDet_smooth_data_iterations
                            )
 
         elif PerformRTAlignment is False:
@@ -362,12 +372,19 @@ if __name__ == "__main__":
             print("ExtractMS2Spectra() complete")
         else:
             res_final = sample_data['ms1_peaks']
+            #Make the MS1 index a column
+            res_final = res_final.reset_index(drop = False)
+            res_final = res_final.rename(columns={'index': 'index_ms1'})
 
         #persistence column only present if the peaks were detected with Persistent Homology approach
         if PeakDetectionMethod == "PersistentHomology":
             sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence'])
         if MS2DataPresent is True and PeakDetectionMethod == "PersistentHomology":
             sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence'])
+
+        #Put columns in sample_data keys in order to keep downstream positional-index functions happy
+        sample_data['ms1'] = sample_data['ms1'][['mz', 'drift_time', 'retention_time', 'intensity']]
+        sample_data['ms1_peaks'] = sample_data['ms1_peaks'][['mz', 'drift_time', 'retention_time', 'intensity']]
 
         if PerformIsotopeDetection is True:
             print("Performing Isotope Detection")
@@ -423,8 +440,8 @@ if __name__ == "__main__":
         #   ReferenceBasedAlignmentRT, AgglomerativeClusteringConcatenateNewPeakData] #type: ignore
     
     #Perform once final dataset for clustering (w/ all sample data) is created    
-    clustering = DEIMoSFunctions_RedundantStepsRemoved.AgglomerativeClusteringMainSteps(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol)
-    print("AgglomerativeClusteringMainSteps() complete")
+    drifts_stripped = DEIMoSFunctions_RedundantStepsRemoved.AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol)
+    print("AgglomerativeClusteringAndPivotTable() complete")
 
     ccs_cal_pos = DEIMoSFunctions_RedundantStepsRemoved.CreateCCSCalObjects(tune_pos_file, 
                                                     ccsCalib_mz, ccsCalib_ccs, 
@@ -433,8 +450,8 @@ if __name__ == "__main__":
     print("CreateCCSCalObjects() complete")
     del tune_pos_file
     
-    drifts_stripped = DEIMoSFunctions_RedundantStepsRemoved.CCSCalibrationSteps(ccs_cal_pos, clustering)
-    print("CCSCalibrationSteps() complete")
+    drifts_stripped = DEIMoSFunctions_RedundantStepsRemoved.CCSCalibration(ccs_cal_pos, drifts_stripped)
+    print("CCSCalibration() complete")
     
     # drifts_gapfilled = CustomFunctions.GapFillingSteps(ccs_cal_pos, drifts_stripped, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_tol, 
     #                 GapFill_trapz_dx)

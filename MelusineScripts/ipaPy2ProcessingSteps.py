@@ -13,90 +13,102 @@ ipaPy2_MS1Annotation_ncores = 4 #ipaPy2 documentation used 1 as default
 ipaPy2_GibbsSamplerAdd_noits = 1000
 ipaPy2_GibbsSamplerAdd_delta_add = 0.1
 
+#Custom Errors
+class CustomError(Exception):
+    pass
+
 # def MetaboliteAnnotationSteps(drifts_stripped):
-def MetaboliteAnnotationSteps():
+def MetaboliteAnnotationSteps(clusterFeaturesipaPy2):
     #With thanks to Karl Burgess for scripting the majority this section
     
     startDataLoad = datetime.now()
-    drifts_stripped = pd.read_csv('20250506_Results_ToReviewWithKarl/final_dataframe_unannotated.csv')
-    drifts_stripped = pd.DataFrame(drifts_stripped)
-    drifts_stripped = drifts_stripped.apply(pd.to_numeric, errors = "ignore")
-    
+
     #get the database files
     #TODO: Replace this with a custom db extracted from the MSDial libraries
     DB = pd.read_csv('ipapy2_files/IPA_MS1.csv')
     adducts = pd.read_csv('ipapy2_files/adducts.csv')
     print("ipaPy2 files loaded")
-    #get the timestamps in minutes rather than seconds - probably not essential
-    drifts_stripped['RTs'] = drifts_stripped['RTs'] * 60
-    #fill NaNs with 0s. Clustering won't work without it
-    #TODO: look into gap filling algorithms and missing value imputation
-    drifts_stripped = drifts_stripped.fillna(0)
-    #cluster the features by similarity and retention time
-    #ideally this will be done via MzMatch or something
-    #but works ok so far.
-    
-    # Added in by Jess (08/04/2025)
-    #ipa.clusterFeatures() cannot convert indexes in [] into floats
-    drifts_stripped = drifts_stripped.drop('ids', axis=1)
-    drifts_stripped = drifts_stripped.reset_index(drop = False)
-    drifts_stripped = drifts_stripped.rename(columns = {"index":"ids"})
-    drifts_stripped['ids'] += 1
-    ##Keep object containing ids, CCS, m/z, and RT values to use downstream
-    feature_data = drifts_stripped[['ids', 'mzs', 'RTs', 'drifts', 'CCS']]
-    #Remove unnecessary columns
-    drifts_stripped = drifts_stripped.drop('CCS', axis=1)
-    drifts_stripped = drifts_stripped.drop('drifts', axis=1)
-    #TODO: improve how the sample columns are specified to be kept
-    drifts_stripped = drifts_stripped[['ids','mzs', 'RTs',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_1',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_1_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_1_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_2',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_2_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_2_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_3',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_3_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_3_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_4',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_4_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_4_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_5',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_5_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_5_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_1',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_1_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_1_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_2',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_2_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_2_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_3',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_3_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_3_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_4',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_4_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_4_MA-d9-Min5-Spk_SR',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_5',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_5_MA-d9-Min5-Spk',
-                                       'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_5_MA-d9-Min5-Spk_SR']]
-    print(drifts_stripped.columns)
-    #TODO: add proper index column
-    print(drifts_stripped)
-    drifts_stripped.to_csv('drifts_stripped_mean_JO.csv')
-    # drifts_stripped.to_csv('drifts_stripped_check.csv')
-    
-    time_before_clusterFeatures = datetime.now()
-    print(time_before_clusterFeatures)
-    drifts_clustered = ipa.clusterFeatures(drifts_stripped, 
-                                           Cthr=0.8, 
-                                           RTwin=1, 
-                                           Intmode='max' #default = 'max'
-                                           )
-    time_after_clusterFeatures = datetime.now()
-    print(time_after_clusterFeatures)
-    drifts_clustered.to_csv('clusterFeatures_output_JO.csv')
-    print("ipa.clusterFeatures completed")
-    print(drifts_clustered)
+
+    if clusterFeaturesipaPy2 is True:
+        feature_table = pd.read_csv('20250506_Results_ToReviewWithKarl/final_dataframe_unannotated.csv')
+        feature_table = pd.DataFrame(feature_table)
+        feature_table = feature_table.apply(pd.to_numeric, errors = "ignore")
+        
+        #get the timestamps in minutes rather than seconds - probably not essential
+        feature_table['RTs'] = feature_table['RTs'] * 60
+        #fill NaNs with 0s. Clustering won't work without it
+        #TODO: look into gap filling algorithms and missing value imputation
+        feature_table = feature_table.fillna(0)
+        #cluster the features by similarity and retention time
+        #ideally this will be done via MzMatch or something
+        #but works ok so far.
+        
+        # Added in by Jess (08/04/2025)
+        #ipa.clusterFeatures() cannot convert indexes in [] into floats
+        feature_table = feature_table.drop('ids', axis=1)
+        feature_table = feature_table.reset_index(drop = False)
+        feature_table = feature_table.rename(columns = {"index":"ids"})
+        feature_table['ids'] += 1
+        ##Keep object containing ids, CCS, m/z, and RT values to use downstream
+        feature_data = feature_table[['ids', 'mzs', 'RTs', 'drifts', 'CCS']]
+        #Remove unnecessary columns
+        feature_table = feature_table.drop('CCS', axis=1)
+        feature_table = feature_table.drop('drifts', axis=1)
+        #TODO: improve how the sample columns are specified to be kept
+        feature_table = feature_table[['ids','mzs', 'RTs',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_1',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_1_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_1_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_2',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_2_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_2_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_3',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_3_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_3_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_4',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_4_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_4_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_5',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_5_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_400TR_5_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_1',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_1_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_1_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_2',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_2_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_2_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_3',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_3_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_3_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_4',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_4_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_4_MA-d9-Min5-Spk_SR',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_5',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_5_MA-d9-Min5-Spk',
+                                        'RTAligned_POS_FBS_IM_MSMS_40kTF_500TR_5_MA-d9-Min5-Spk_SR']]
+        print(feature_table.columns)
+        #TODO: add proper index column
+        print(feature_table)
+        feature_table.to_csv('drifts_stripped_mean_JO.csv')
+        # feature_table.to_csv('drifts_stripped_check.csv')
+        
+        time_before_clusterFeatures = datetime.now()
+        print(time_before_clusterFeatures)
+        drifts_clustered = ipa.clusterFeatures(feature_table,
+                                            Cthr=0.8, 
+                                            RTwin=1, 
+                                            Intmode='max' #default = 'max'
+                                            )
+        time_after_clusterFeatures = datetime.now()
+        print(time_after_clusterFeatures)
+        drifts_clustered.to_csv('clusterFeatures_output_JO.csv')
+        print("ipa.clusterFeatures completed")
+        print(drifts_clustered)
+    elif clusterFeaturesipaPy2 is False:
+        #TODO: Put DEIMoS-clustered feature table into format for ipaPy2 steps
+        feature_table = pd.DataFrame()
+    else:
+        raise CustomError("""Set clusterFeaturesipaPy2 as True or False to indicate whether you want to include this step.""")
     
     # drifts_clustered.to_csv('drifts_clustered.csv')
     #build possible adduct library for this dataset
@@ -110,25 +122,25 @@ def MetaboliteAnnotationSteps():
     #Added by Jess (08/04/2025)
     #ipaPy2 documentation says that the ipa.MS1annotation() function should get data
     # in the format output from the ipa.map_isotope_patterns() function
-    print(drifts_clustered)
+    print(feature_table)
     # drifts_clustered = drifts_clustered.rename(columns={'Int': 'Ints'})
     
     time_before_map_isotope_patterns = datetime.now()
     print(time_before_map_isotope_patterns)
-    ipa.map_isotope_patterns(drifts_clustered, 
+    ipa.map_isotope_patterns(feature_table, 
                              isoDiff=1, 
                              ppm=100, #default 100 
                              ionisation=1, 
                              MinIsoRatio=0.5)
     time_after_map_isotope_patterns = datetime.now()
     print(time_after_map_isotope_patterns)
-    drifts_clustered.to_csv('mapIsotopePatterns_output_JO.csv')
+    feature_table.to_csv('mapIsotopePatterns_output_JO.csv')
     print("map_isotope_patterns completed")
-    print(drifts_clustered)
+    print(feature_table)
     
     #complete annotations for MS1
     #TODO: extract the MSMS data and perform MSMS annotation
-    annotations = ipa.MS1annotation(drifts_clustered, allAdds, 
+    annotations = ipa.MS1annotation(feature_table, allAdds, 
                                     ppm=ipaPy2_MS1Annotation_ppm, 
                                     ncores=ipaPy2_MS1Annotation_ncores)
     time_after_MS1annotation = datetime.now()
@@ -147,7 +159,7 @@ def MetaboliteAnnotationSteps():
         print("Unable to save annotations dictionary as pickled file")
     
     #compute posterior probabilities including adduct data
-    zs = ipa.Gibbs_sampler_add(drifts_clustered, annotations, 
+    zs = ipa.Gibbs_sampler_add(feature_table, annotations, 
                                noits=ipaPy2_GibbsSamplerAdd_noits, 
                                delta_add=ipaPy2_GibbsSamplerAdd_delta_add, 
                                all_out=True)
@@ -174,7 +186,7 @@ def MetaboliteAnnotationSteps():
     Bio.to_csv('Compute_Bio_output_JO.csv')
     
     #Compute posterior probabilities integrating both adducts and biochemical connections
-    ipa.Gibbs_sampler_bio_add(drifts_clustered, #Should be the output of map_isotope_patterns()
+    ipa.Gibbs_sampler_bio_add(feature_table, #Should be the output of map_isotope_patterns()
                               annotations,
                               Bio,
                               noits=5000,
@@ -252,6 +264,8 @@ def MetaboliteAnnotationSteps():
 #     print("time_after_Gibbs_sampler_bio_add:", time_after_Gibbs_sampler_bio_add)
 # =============================================================================
 
+clusterFeaturesipaPy2 = True
+
 #TODO: Start of the process
 if __name__ == "__main__":
     
@@ -267,7 +281,7 @@ if __name__ == "__main__":
     print("Working directory set")
         
     # MetaboliteAnnotationSteps(drifts_stripped)
-    MetaboliteAnnotationSteps()
+    MetaboliteAnnotationSteps(clusterFeaturesipaPy2)
     print("MetaboliteAnnotationSteps() complete")    
     
     print("===============================")

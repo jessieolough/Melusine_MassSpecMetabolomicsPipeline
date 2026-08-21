@@ -164,7 +164,8 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, PeakDetectionM
                            rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
                            rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol, 
                            SaveRTAlignmentDataFiles, SaveRTAlignmentGraphs, MS2DataPresent, 
-                           PeakDet_smooth_data_radius, PeakDet_persistent_homology_radius):
+                           PeakDet_smooth_data_radius, PeakDet_persistent_homology_radius, 
+                           PeakDet_smooth_data_iterations):
 
     if SaveRTAlignmentDataFiles is True or SaveRTAlignmentGraphs is True:
         #Make a folder for this sample for all Peak Detection results to go in to
@@ -174,7 +175,7 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, PeakDetectionM
 
     #Detect peaks to use in RT Alignment
     sample_data = DetectPeaks(file_NoExt, sample_data, PeakDetectionMethod, PeakDet_smooth_data_radius,
-                              PeakDet_persistent_homology_radius, MS2DataPresent)
+                              PeakDet_smooth_data_iterations, PeakDet_persistent_homology_radius, MS2DataPresent)
     
     if SaveRTAlignmentGraphs is True:
         #Visualise misalignment
@@ -382,8 +383,8 @@ def ExtractMS2Spectra(sample_data, file_NoExt, MS2Extract_intensity_thres, MS2Ex
             shutil.rmtree('Results/{}/MS2Extraction'.format(file_NoExt))
         os.mkdir('Results/{}/MS2Extraction'.format(file_NoExt))
 
-    #Drop scanId or this messes up the "Get maximal data point" bit
-    sample_data['ms1'] = sample_data['ms1'].drop('scanId', axis = 1)
+    # #Drop scanId or this messes up the "Get maximal data point" bit
+    # sample_data['ms1'] = sample_data['ms1'].drop('scanId', axis = 1)
 
     if SaveMS2ExtractGraphs is True:
     
@@ -603,15 +604,6 @@ def AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_me
     
     # create an empty dataframe to store the clustered peaks
     multipeaks = pd.DataFrame()
-    
-# =============================================================================
-#     #Use ms1_peaks object previously generated in the pipeline
-#     merged_peaks = deimos.alignment.merge_features(features = ms1_peaks,
-#                                             dims=['mz', 'drift_time',
-#                                                 'retention_time'],
-#                                             tol=agglo_mergeFeatures_mz_dt_rt_tol,
-#                                             relative = [True, True, False])  
-# =============================================================================
 
     #Use res_final object with MS1 and MS2 data
     merged_peaks = deimos.alignment.merge_features(features = res_final,
@@ -640,18 +632,10 @@ def AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_me
     return loopcount
     
     
-def AgglomerativeClusteringMainSteps(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol):
+def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol):
     #With thanks to Karl Burgess for scripting the majority this section
     
     multipeaks_AllSamples = pd.read_csv("Results/multipeaks_AllSamples.csv")
-    
-# =============================================================================
-#     #Convert object to dask dataframe (help with memory issues)
-#     multipeaks_AllSamples = dd.from_pandas(multipeaks_AllSamples, 
-#                                            npartitions=3)
-#     print("Converted to dask object")
-#     print(multipeaks_AllSamples["sample_idx"])
-# =============================================================================
     
     #Code from Sean Colby
     # Partition the data
@@ -691,27 +675,7 @@ def AgglomerativeClusteringMainSteps(agglo_multiSampPart_size, agglo_multiSampPa
     clustering.to_csv('Results/clustering.csv', index=False)
     print("clustering.to_csv() completed")
 
-    return clustering
-
-def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol):
-    tune_pos = deimos.load(rf'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
-    print("Calibrating CCS values with tuning file")
-    ccs_cal_pos = deimos.calibration.tunemix(tune_pos,
-                                              mz=ccsCalib_mz,
-                                              ccs=ccsCalib_ccs,
-                                              q=ccsCalib_q,
-                                              buffer_mass=ccsCalib_buffer_mass, 
-                                              mz_tol=ccsCalib_mz_tol, 
-                                              dt_tol=ccsCalib_dt_tol)
-    print('r-squared:\t', ccs_cal_pos.fit['r'] ** 2) #type: ignore
-    
-    return ccs_cal_pos
-
-# def CCSCalibrationSteps(ccs_cal_pos):
-def CCSCalibrationSteps(ccs_cal_pos, clustering):
-    
-    # clustering_CCS = clustering
-    clustering = clustering.apply(pd.to_numeric, errors = "ignore")
+    exit()
 
     # pivot the table to get it into the right format for ipaPy2
     # table headers: id(cluster), average mz, average rts, sample_intensities NOTE: no average drift time or ccs currently!
@@ -719,12 +683,7 @@ def CCSCalibrationSteps(ccs_cal_pos, clustering):
                                 values = ['intensity', 'mz', 'retention_time', 
                                           'drift_time'], 
                                 index = 'cluster', columns = 'sample_id') #columns changed from 'sample_idx'
-# =============================================================================
-#     full_pivot = pd.pivot_table(clustering_CCS, 
-#                                 values = ['intensity', 'mz', 'retention_time', 
-#                                           'drift_time', 'persistence', 'sample_id'], 
-#                                 index = 'cluster', columns = 'sample_idx')
-# =============================================================================    
+       
     full_pivot.to_csv('Results/full_pivot.csv', index=False)
     print("full_pivot = pd.pivot_table() completed")
     del clustering
@@ -767,6 +726,25 @@ def CCSCalibrationSteps(ccs_cal_pos, clustering):
     # drifts_stripped = drifts_stripped.index.name ='ids' #Commented out by Jess (29/01/2025)
     # if not, add a specific set of indexes as a different column
     drifts_stripped['ids'] = range(1, len(drifts_stripped) + 1)
+
+    return drifts_stripped
+
+def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol):
+    tune_pos = deimos.load(rf'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
+    print("Calibrating CCS values with tuning file")
+    ccs_cal_pos = deimos.calibration.tunemix(tune_pos,
+                                              mz=ccsCalib_mz,
+                                              ccs=ccsCalib_ccs,
+                                              q=ccsCalib_q,
+                                              buffer_mass=ccsCalib_buffer_mass, 
+                                              mz_tol=ccsCalib_mz_tol, 
+                                              dt_tol=ccsCalib_dt_tol)
+    print('r-squared:\t', ccs_cal_pos.fit['r'] ** 2) #type: ignore
+    
+    return ccs_cal_pos
+
+# def CCSCalibrationSteps(ccs_cal_pos):
+def CCSCalibration(ccs_cal_pos, drifts_stripped):
     
     drifts_stripped['CCS'] = ccs_cal_pos.arrival2ccs(mz=drifts_stripped['mzs'], 
                                                 ta=drifts_stripped['drifts'], 
@@ -775,5 +753,4 @@ def CCSCalibrationSteps(ccs_cal_pos, clustering):
     drifts_stripped.to_csv('Results/drifts_stripped_final.csv', index=False)
     print("CCS Calibration steps completed")
 
-    
     return drifts_stripped
