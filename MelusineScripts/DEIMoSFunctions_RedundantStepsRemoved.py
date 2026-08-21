@@ -20,7 +20,8 @@ import warnings
 # Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-def FindMiddleFileForRTAlignment(ms1_threshold, ms2_threshold, PeakDet_smooth_data_radius, 
+def FindMiddleFileForRTAlignment(ms1_threshold, ms2_threshold, PeakDetectionMethod, 
+                                 PeakDet_smooth_data_radius, PeakDet_smooth_data_iterations,
                                  PeakDet_persistent_homology_radius, MS2DataPresent):
     #Find the file in the middle of the run to align other files to downstream
     CreationTime = []
@@ -65,8 +66,8 @@ def FindMiddleFileForRTAlignment(ms1_threshold, ms2_threshold, PeakDet_smooth_da
         rtalign_data['ms2'] = deimos.threshold(rtalign_data['ms2'], threshold=ms2_threshold)
 
     #Peak picks (required for RT alignment)
-    rtalign_data = DetectPeaks(middle, rtalign_data, 
-                               PeakDet_smooth_data_radius, 
+    rtalign_data = DetectPeaks(middle, rtalign_data, PeakDetectionMethod,
+                               PeakDet_smooth_data_radius, PeakDet_smooth_data_iterations,
                                PeakDet_persistent_homology_radius, MS2DataPresent)
 
     # #Just save the middle/reference file as it is
@@ -75,66 +76,91 @@ def FindMiddleFileForRTAlignment(ms1_threshold, ms2_threshold, PeakDet_smooth_da
     
     return middle, rtalign_data
 
-def DetectPeaks(file_NoExt, sample_data, PeakDet_smooth_data_radius, PeakDet_persistent_homology_radius, MS2DataPresent):
-
-    # #Make Folder for results for this sample
-    # if os.path.exists('Results/{}'.format(file_NoExt)):
-    #     shutil.rmtree('Results/{}'.format(file_NoExt))
-    # os.makedirs('Results/{}'.format(file_NoExt))
+def DetectPeaks(file_NoExt, sample_data, PeakDetectionMethod, 
+                PeakDet_smooth_data_radius, PeakDet_smooth_data_iterations, 
+                PeakDet_persistent_homology_radius, MS2DataPresent):
     
     #Make a folder for this sample for all Peak Detection results to go in to
     if os.path.exists('Results/{}/PeakDetection'.format(file_NoExt)):
         shutil.rmtree('Results/{}/PeakDetection'.format(file_NoExt))
     os.mkdir('Results/{}/PeakDetection'.format(file_NoExt))
-    
-    # Build factors from raw data
-    factors = deimos.build_factors(sample_data['ms1'], dims='detect')
-    # Build index
-    index = deimos.build_index(sample_data['ms1'], factors)
-    # Smooth data
-    sample_data['ms1'] = deimos.filters.smooth(sample_data['ms1'], 
-                                         index=index, dims=['mz', 'drift_time',
-                                                            'retention_time'],
-                                         radius=PeakDet_smooth_data_radius, iterations=7)
-    # Perform peak detection
-    sample_data['ms1_peaks'] = deimos.peakpick.persistent_homology(sample_data['ms1'], index=index,
-                                                dims=['mz', 'drift_time', 
-                                                      'retention_time'],
-                                                radius=PeakDet_persistent_homology_radius)
-    
-    #Save outputs as .csv file
-    sample_data['ms1_peaks'].to_csv('Results/{}/PeakDetection/ms1_peaks.csv'.format(file_NoExt), index=False)
-    
-    #Remove columns not required for downstream processes
-    sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(['mz_weighted', 'drift_time_weighted', 
-                                'retention_time_weighted'], axis = 1)
 
-    if MS2DataPresent is True:
+    if PeakDetectionMethod == "PersistentHomology":
+    
         # Build factors from raw data
-        factors = deimos.build_factors(sample_data['ms2'], dims='detect')
+        factors = deimos.build_factors(sample_data['ms1'], dims='detect')
         # Build index
-        index = deimos.build_index(sample_data['ms2'], factors)
+        index = deimos.build_index(sample_data['ms1'], factors)
         # Smooth data
-        sample_data['ms2'] = deimos.filters.smooth(sample_data['ms2'], 
-                                            index=index, dims=['mz', 'drift_time', 
+        sample_data['ms1'] = deimos.filters.smooth(sample_data['ms1'], 
+                                            index=index, dims=['mz', 'drift_time',
                                                                 'retention_time'],
-                                            radius=PeakDet_smooth_data_radius, iterations=7)
+                                            radius=PeakDet_smooth_data_radius, iterations=PeakDet_smooth_data_iterations)
         # Perform peak detection
-        sample_data['ms2_peaks'] = deimos.peakpick.persistent_homology(sample_data['ms2'], index=index,
+        sample_data['ms1_peaks'] = deimos.peakpick.persistent_homology(sample_data['ms1'], index=index,
                                                     dims=['mz', 'drift_time', 
                                                         'retention_time'],
                                                     radius=PeakDet_persistent_homology_radius)
-        
+    
         #Save outputs as .csv file
-        sample_data['ms2_peaks'].to_csv('Results/{}/PeakDetection/ms2_peaks.csv'.format(file_NoExt), index=False)
+        sample_data['ms1_peaks'].to_csv('Results/{}/PeakDetection/ms1_peaks.csv'.format(file_NoExt), 
+                                        index=False)
         
         #Remove columns not required for downstream processes
-        sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(['mz_weighted', 'drift_time_weighted', 
+        sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(['mz_weighted', 'drift_time_weighted', 
                                     'retention_time_weighted'], axis = 1)
+
+        if MS2DataPresent is True:
+            # Build factors from raw data
+            factors = deimos.build_factors(sample_data['ms2'], dims='detect')
+            # Build index
+            index = deimos.build_index(sample_data['ms2'], factors)
+            # Smooth data
+            sample_data['ms2'] = deimos.filters.smooth(sample_data['ms2'], 
+                                                index=index, dims=['mz', 'drift_time', 
+                                                                    'retention_time'],
+                                                radius=PeakDet_smooth_data_radius, iterations=7)
+            # Perform peak detection
+            sample_data['ms2_peaks'] = deimos.peakpick.persistent_homology(sample_data['ms2'], index=index,
+                                                        dims=['mz', 'drift_time', 
+                                                            'retention_time'],
+                                                        radius=PeakDet_persistent_homology_radius)
+            
+            #Save outputs as .csv file
+            sample_data['ms2_peaks'].to_csv('Results/{}/PeakDetection/ms2_peaks.csv'.format(file_NoExt), index=False)
+            
+            #Remove columns not required for downstream processes
+            sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(['mz_weighted', 'drift_time_weighted', 
+                                        'retention_time_weighted'], axis = 1)
+
+    elif PeakDetectionMethod == "MaximumFiltration":
+        # Load data, excluding scanid column
+        # ms1 = deimos.load('example_data.h5', key='ms1', columns=['mz', 'drift_time', 'retention_time', 'intensity'])
+
+        # Sum over retention time
+        ms1_2d = deimos.collapse(sample_data['ms1'][['mz', 'drift_time', 'retention_time', 'intensity']], 
+                                 keep=['mz', 'drift_time', 'retention_time'])
+        # Perform peak detection
+        sample_data['ms1_peaks'] = deimos.peakpick.local_maxima(ms1_2d, dims=['mz', 'drift_time', 'retention_time'], bins=[37, 9, 37])
+        del ms1_2d
+
+        #Save outputs as .csv file
+        sample_data['ms1_peaks'].to_csv('Results/{}/PeakDetection/ms1_peaks.csv'.format(file_NoExt), 
+                                        index=False)
+
+        if MS2DataPresent == True:
+            # Sum over retention time
+            ms2_2d = deimos.collapse(sample_data['ms2'][['mz', 'drift_time', 'retention_time', 'intensity']], keep=['mz', 'drift_time', 'retention_time'])
+            # Perform peak detection
+            sample_data['ms2_peaks'] = deimos.peakpick.local_maxima(ms2_2d, dims=['mz', 'drift_time', 'retention_time'], bins=[37, 9, 37])
+            del ms2_2d
+            #Save outputs as .csv file
+            sample_data['ms2_peaks'].to_csv('Results/{}/PeakDetection/ms2_peaks.csv'.format(file_NoExt), 
+                                        index=False)
     
     return sample_data
 
-def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, rtalign_persisHomology_thres, 
+def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, PeakDetectionMethod, rtalign_persisHomology_thres, 
                            rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
                            rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol, 
                            SaveRTAlignmentDataFiles, SaveRTAlignmentGraphs, MS2DataPresent, 
@@ -147,7 +173,7 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, rtalign_persis
         os.mkdir('Results/{}/RetentionTimeAlignmentAndPeakDetection'.format(file_NoExt))
 
     #Detect peaks to use in RT Alignment
-    sample_data = DetectPeaks(file_NoExt, sample_data, PeakDet_smooth_data_radius,
+    sample_data = DetectPeaks(file_NoExt, sample_data, PeakDetectionMethod, PeakDet_smooth_data_radius,
                               PeakDet_persistent_homology_radius, MS2DataPresent)
     
     if SaveRTAlignmentGraphs is True:
@@ -668,8 +694,8 @@ def AgglomerativeClusteringMainSteps(agglo_multiSampPart_size, agglo_multiSampPa
     return clustering
 
 def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol):
-    tune_pos = deimos.load(f'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
-    print(tune_pos)
+    tune_pos = deimos.load(rf'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
+    print("Calibrating CCS values with tuning file")
     ccs_cal_pos = deimos.calibration.tunemix(tune_pos,
                                               mz=ccsCalib_mz,
                                               ccs=ccsCalib_ccs,

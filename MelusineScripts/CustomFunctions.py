@@ -20,17 +20,23 @@ import warnings
 # Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-def CollectPeakShapeData(sample_data, res_final, PeakShapeCorr_mz_tol, PeakShapeCorr_RT_tol, 
-                         PeakShapeCorr_DT_tol):
 
-    #Add new column to contain the Peak Shape information
-    res_final['Peak_Shape'] = [None]*len(res_final)
+def InspectRawDataAroundMS1Peaks(sample_data, res_final, PeakShapeCorr_mz_tol, PeakShapeCorr_RT_tol, 
+                         PeakShapeCorr_DT_tol, PerformPeakShapeCorrelation):
+
+    if PerformPeakShapeCorrelation is True:
+        #Add new column to contain the Peak Shape information
+        res_final['Peak_Shape'] = [None]*len(res_final)      
+
+    #TODO: remove after testing
+    sample_data['ms1_peaks'] = sample_data['ms1_peaks'].iloc[70:90]
 
     #Loop through each peak and collect peak shape information
     for index, row in sample_data['ms1_peaks'].iterrows():
         mz = row['mz']
         RT = row['retention_time']
         DT = row['drift_time']
+        intensity = row['intensity']
 
         #Subset raw data within user-specified tolerances to find peak info
         #Calculate m/z uncertainty based off ppm tolerance (mz_tol)
@@ -38,47 +44,207 @@ def CollectPeakShapeData(sample_data, res_final, PeakShapeCorr_mz_tol, PeakShape
         # ms1raw_subset = sample_data['ms1'].loc[(sample_data['ms1']["mz"] >= mz-uncertainty) & (sample_data['ms1']["mz"] <= mz+uncertainty)]
         ms1raw_subset = sample_data['ms1'][sample_data['ms1']["mz"] == mz]
         ms1raw_subset = ms1raw_subset[ms1raw_subset["drift_time"] == DT]
-        ms1raw_subset = ms1raw_subset.loc[(ms1raw_subset["retention_time"] >= RT-PeakShapeCorr_RT_tol) & (ms1raw_subset["retention_time"] <= RT+PeakShapeCorr_RT_tol)]
+
+        # Sort by retention time
+        ms1raw_subset = ms1raw_subset.sort_values("retention_time")
+        #Find local minima to get retention time boundary for peak
+        intensities = ms1raw_subset["intensity"].values
+        rt_values = ms1raw_subset["retention_time"].values
+
+        # Find the index of the intensity value (i.e., where intensity matches the current peak's intensity)
+        closest_idx = (np.abs(intensities - intensity)).argmin()
+
+        ##############################################
+        ms1raw_subset_RTTol = ms1raw_subset.loc[(ms1raw_subset["retention_time"] >= RT-PeakShapeCorr_RT_tol) & (ms1raw_subset["retention_time"] <= RT+PeakShapeCorr_RT_tol)]
         # ms1raw_subset = ms1raw_subset.loc[(ms1raw_subset["drift_time"] >= RT-PeakShapeCorr_DT_tol) & (ms1raw_subset["drift_time"] <= RT+PeakShapeCorr_DT_tol)]
+        ##############################################
 
-        #Get average intensity at each RT time point (potentially across different m/z and drift time values)
-        # fig, axes = plt.subplots(1, 3, figsize=(14, 6))
+        ##############################################
+        # Scan left
+        left_idx = closest_idx
+        while left_idx > 0 and intensities[left_idx] > 2000:
+            left_idx -= 1
+        left_boundary = rt_values[left_idx]
 
-        # # mz vs intensity
-        # axes[0].plot(ms1raw_subset['mz'], ms1raw_subset['intensity'], marker='o', linestyle='-')
-        # axes[0].set_xlabel('m/z')
-        # axes[0].set_ylabel('Intensity')
-        # axes[0].set_title('Peak Shape: m/z vs Intensity')
+        # Scan right
+        right_idx = closest_idx
+        while right_idx < len(intensities) - 1 and intensities[right_idx] > 2000:
+            right_idx += 1
+        right_boundary = rt_values[right_idx]
 
-        # # drift_time vs intensity
-        # axes[1].plot(ms1raw_subset['drift_time'], ms1raw_subset['intensity'], marker='o', linestyle='-')
-        # axes[1].set_xlabel('Drift Time')
-        # axes[1].set_ylabel('Intensity')
-        # axes[1].set_title('Peak Shape: Drift Time vs Intensity')
+        # Use these as new boundaries
+        ms1raw_subset_IntThresOnly = ms1raw_subset.loc[
+            (ms1raw_subset["retention_time"] >= left_boundary) &
+            (ms1raw_subset["retention_time"] <= right_boundary)
+        ]
+        ##############################################
 
-        # # retention_time vs intensity
-        # axes[2].plot(ms1raw_subset['retention_time'], ms1raw_subset['intensity'], marker='o', linestyle='-')
-        # axes[2].set_xlabel('Retention Time')
-        # axes[2].set_ylabel('Intensity')
-        # axes[2].set_title('Peak Shape: Retention Time vs Intensity')
+        ##############################################
+        # Scan left
+        left_idx = closest_idx
+        min_intensity_idx = left_idx  # Track the index of the lowest intensity found so far
+        min_intensity = intensities[left_idx]
+        exceeded_original = False
+        while left_idx > 0 and intensities[left_idx] > 2000 and exceeded_original is False:
+            left_idx -= 1
+            if intensities[left_idx] < min_intensity:
+                min_intensity = intensities[left_idx]
+                min_intensity_idx = left_idx
+            if intensities[left_idx] > intensity:
+                exceeded_original = True
+        # If intensities exceeded the original peak intensity during search, pick the lowest-intensity encountered index
+        if exceeded_original:
+            left_boundary_IntSens = rt_values[min_intensity_idx]
+        else:
+            left_boundary_IntSens = rt_values[left_idx]
 
-        # plt.tight_layout()
-        # plt.savefig(f"PeakShape_mz{mz}_RT{RT}_DT{DT}_RTTol{PeakShapeCorr_RT_tol}_mzTol{PeakShapeCorr_mz_tol}_DTTol{PeakShapeCorr_DT_tol}.png")
-        # plt.close()
+        # Scan right
+        right_idx = closest_idx
+        min_intensity_idx = right_idx  # Track the index of the lowest intensity found so far
+        min_intensity = intensities[right_idx]
+        exceeded_original = False
+        while right_idx < len(intensities) - 1 and intensities[right_idx] > 2000 and not exceeded_original:
+            right_idx += 1
+            if intensities[right_idx] < min_intensity:
+                min_intensity = intensities[right_idx]
+                min_intensity_idx = right_idx
+            if intensities[right_idx] > intensity:
+                exceeded_original = True
+        # If intensities exceeded the original peak intensity during search, pick the lowest-intensity encountered index
+        if exceeded_original:
+            right_boundary_IntSens = rt_values[min_intensity_idx]
+        else:
+            right_boundary_IntSens = rt_values[right_idx]
 
-        
-        ms1raw_subset = ms1raw_subset.groupby('retention_time').mean()
-        ms1raw_subset = ms1raw_subset.reset_index()
+        # Use these as new boundaries
+        ms1raw_subset_IntSens = ms1raw_subset.loc[
+            (ms1raw_subset["retention_time"] >= left_boundary_IntSens) &
+            (ms1raw_subset["retention_time"] <= right_boundary_IntSens)
+        ]
+        ##############################################
 
-        #Round all values in the subset raw data --> improve downstream RT matching
-        ms1raw_subset = ms1raw_subset.round(3)     
-         
-        #Convert relevent information for Peak Shape into numpy array
-        ms1raw_subset = ms1raw_subset[['retention_time', 'intensity']]
-        ms1raw_subset = ms1raw_subset.to_numpy()
+        ##############################################
+        # Find local minima to get retention time boundary for peak
+        # # Sort by retention time
+        # ms1raw_subset_PeakRiseSens = ms1raw_subset.sort_values("retention_time")
+        # intensities = ms1raw_subset["intensity"].values
+        # rt_values = ms1raw_subset["retention_time"].values
 
-        #Add the peak shape information into the row in res_final corresponding to this MS1 peak
-        res_final.at[index, 'Peak_Shape'] = ms1raw_subset
+        # # Find the index of the intensity value (i.e., where intensity matches the current peak's intensity)
+        # closest_idx = (np.abs(intensities - intensity)).argmin()
+
+        # Scan left
+        left_idx = closest_idx
+        min_intensity_idx = left_idx  # Track the index of the lowest intensity found so far
+        min_intensity = intensities[left_idx]
+        consecutive_increase = 0
+        last_intensity = intensities[left_idx]
+        while left_idx > 0:# and intensities[left_idx] > 2000:
+            left_idx -= 1
+            current_intensity = intensities[left_idx]
+            if current_intensity < min_intensity:
+                min_intensity = current_intensity
+                min_intensity_idx = left_idx
+                consecutive_increase = 0  # reset counter on new minimum
+            else:
+                if current_intensity > last_intensity:
+                    consecutive_increase += 1
+                else:
+                    consecutive_increase = 0
+            last_intensity = current_intensity
+            if consecutive_increase >= 5:
+                break
+        left_boundary_PeakRiseSens = rt_values[min_intensity_idx]
+
+        # Scan right
+        right_idx = closest_idx
+        min_intensity_idx = right_idx  # Track the index of the lowest intensity found so far
+        min_intensity = intensities[right_idx]
+        consecutive_increase = 0
+        last_intensity = intensities[right_idx]
+        while right_idx < len(intensities) - 1:# and intensities[right_idx] > 2000:
+            right_idx += 1
+            current_intensity = intensities[right_idx]
+            if current_intensity < min_intensity:
+                min_intensity = current_intensity
+                min_intensity_idx = right_idx
+                consecutive_increase = 0  # reset counter on new minimum
+            else:
+                if current_intensity > last_intensity:
+                    consecutive_increase += 1
+                else:
+                    consecutive_increase = 0
+            last_intensity = current_intensity
+            if consecutive_increase >= 5:
+                break
+        right_boundary_PeakRiseSens = rt_values[min_intensity_idx]
+
+        # Use these as new boundaries
+        ms1raw_subset_PeakRiseSens = ms1raw_subset.loc[
+            (ms1raw_subset["retention_time"] >= left_boundary_PeakRiseSens) &
+            (ms1raw_subset["retention_time"] <= right_boundary_PeakRiseSens)
+        ]
+        ##############################################
+
+        # Get average intensity at each RT time point (potentially across different m/z and drift time values)
+        fig, axes = plt.subplots(1, 4, figsize=(16, 6))
+
+        # retention_time (user tolerance) vs intensity
+        axes[0].plot(ms1raw_subset_RTTol['retention_time'], ms1raw_subset_RTTol['intensity'], marker='o', linestyle='-')
+        axes[0].set_xlabel('Retention Time')
+        axes[0].set_ylabel('Intensity')
+        axes[0].set_title('Peak Shape: Retention Time \n(User Tolerance) vs Intensity')
+        axes[0].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+        axes[0].legend()
+
+        # retention_time (local minima, low intensity thres only) vs intensity
+        axes[1].plot(ms1raw_subset_IntThresOnly['retention_time'], ms1raw_subset_IntThresOnly['intensity'], marker='o', linestyle='-')
+        axes[1].set_xlabel('Retention Time')
+        axes[1].set_ylabel('Intensity')
+        axes[1].set_title('Peak Shape: Retention Time \n(Local Minima, low intensity thres only) vs Intensity')
+        axes[1].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+        axes[1].legend()
+
+        # retention_time (local minima, high intensity sensitive) vs intensity
+        axes[2].plot(ms1raw_subset_IntSens['retention_time'], ms1raw_subset_IntSens['intensity'], marker='o', linestyle='-')
+        axes[2].set_xlabel('Retention Time')
+        axes[2].set_ylabel('Intensity')
+        axes[2].set_title('Peak Shape: Retention Time \n(Local Minima, low intensity thres with \nhigh intensity sensitive) vs Intensity')
+        axes[2].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+        axes[2].legend()
+
+        # retention_time (local minima, low intensity thres only) vs intensity
+        axes[3].plot(ms1raw_subset_PeakRiseSens['retention_time'], ms1raw_subset_PeakRiseSens['intensity'], marker='o', linestyle='-')
+        axes[3].set_xlabel('Retention Time')
+        axes[3].set_ylabel('Intensity')
+        axes[3].set_title('Peak Shape: Retention Time \n(Local Minima, Peak Rise Sensitive) vs Intensity')
+        axes[3].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+        axes[3].legend()
+
+        # Add overall super title with mz, RT, DT, and intensity
+        fig.subplots_adjust(top=0.85)
+        fig.suptitle(f"Peak Shape Data: mz={mz:.5f}, RT={RT:.3f}, DT={DT:.3f}, Intensity={intensity:.0f}", fontsize=14)
+
+        plt.tight_layout()
+        plt.savefig(f"Results/PeakShape_Idx{index}_mz{mz}_RT{RT}_DT{DT}.png", bbox_inches='tight')
+        plt.show()
+        plt.close()
+
+        # if PerformPeakShapeCorrelation is True:
+            # ms1raw_subset = ms1raw_subset.groupby('retention_time').mean()
+            # ms1raw_subset = ms1raw_subset.reset_index()
+
+            # #Round all values in the subset raw data --> improve downstream RT matching
+            # ms1raw_subset = ms1raw_subset.round(3)     
+            
+            # #Convert relevent information for Peak Shape into numpy array
+            # ms1raw_subset = ms1raw_subset[['retention_time', 'intensity']]
+            # ms1raw_subset = ms1raw_subset.to_numpy()
+
+            # #Add the peak shape information into the row in res_final corresponding to this MS1 peak
+            # res_final.at[index, 'Peak_Shape'] = ms1raw_subset
+
+    exit()
 
     return sample_data, res_final
 

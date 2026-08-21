@@ -54,7 +54,8 @@ ccsCalib_dt_tol = 0.04
 
 #Peak Detection 
 PeakDet_intensity_thres = 500
-PeakDet_smooth_data_radius = [0, 1, 0]
+PeakDet_smooth_data_radius = [0, 1, 1.5] #[0,1,0] in documentation [mz,DT,RT]
+PeakDet_smooth_data_iterations = 10 #7 in documentation
 PeakDet_persistent_homology_radius = [2, 10, 0]
 
 #MS2 Extraction
@@ -119,7 +120,7 @@ rtalign_zipmap_mz_dt_rt_tol = [20E-6, 0.03, 2]
 
 #Peak Shape Correlation
 PeakShapeCorr_mz_tol = 5 #ppm
-PeakShapeCorr_RT_tol = 3.0 #minutes
+PeakShapeCorr_RT_tol = 2.0 #minutes
 PeakShapeCorr_DT_tol = 30 #milliseconds
 
 #Agglomerative Clustering
@@ -183,7 +184,9 @@ class CustomError(Exception):
 #Set whether the pipeline will undergo MS2 data processing or not
 MS2DataPresent = False
 ##Peak Detection
-#Decide whether to so this within the script or not (e.g., in case they have already been thresholded in previous steps)
+#Decide which method to use
+PeakDetectionMethod = "PersistentHomology" #Type PersistentHomology or MaximumFiltration
+#Decide whether to threshold within the script or not (e.g., in case they have already been thresholded in previous steps)
 ThresholdDataWithinScript = True
 ms1_threshold = 500
 if MS2DataPresent is True:
@@ -200,10 +203,12 @@ PerformIsotopeDetection = False
 SaveIsotopeDetDataFiles = True
 SaveIsotopeDetGraphs = True
 ##MS2 Extraction
-SaveMS2ExtractDataFiles = False
+SaveMS2ExtractDataFiles = True
 SaveMS2ExtractGraphs = False
 ##Peak Shape Correlation
 PerformPeakShapeCorrelation = True
+##Gap Filling
+PerformGapFilling = False
 
 if __name__ == "__main__":
     
@@ -216,6 +221,7 @@ if __name__ == "__main__":
 
     print("-=-=-=-=-=-=-=-Parameters=-=-=-=-=-=-=-=-=")
     print("========Peak Detection========")
+    print("Peak Detection Method:", PeakDetectionMethod)
     print("MS1 threshold:", ms1_threshold)
     print("MS2 threshold:", ms2_threshold)
     print("SaveDetectedPeaksData?", SaveDetectedPeaksData)
@@ -232,6 +238,10 @@ if __name__ == "__main__":
     if MS2DataPresent is True:
         print("SaveMS2ExtractDataFiles is:", SaveMS2ExtractDataFiles)
         print("SaveMS2ExtractGraphs is:", SaveMS2ExtractGraphs)
+    print("====Peak Shape Correlation====")  
+    print("PerformPeakShapeCorrelation?", PerformPeakShapeCorrelation) 
+    print("==========Gap Filling=========") 
+    print("PerformGapFilling?", PerformGapFilling)
     print("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
 
     #Create multipeaks and loopcount objects for downstream agglomerative clustering steps
@@ -251,7 +261,8 @@ if __name__ == "__main__":
         #Note: The Peak Detection is also performed for the middle file at this point
         middle, rtalign_data = DEIMoSFunctions_RedundantStepsRemoved.FindMiddleFileForRTAlignment(ms1_threshold, 
                                                                                                 ms2_threshold,
-                                                                                                PeakDet_smooth_data_radius, 
+                                                                                                PeakDetectionMethod,
+                                                                                                PeakDet_smooth_data_radius, PeakDet_smooth_data_iterations,
                                                                                                 PeakDet_persistent_homology_radius, 
                                                                                                 MS2DataPresent)
         print("FindMiddleFileForRTAlignment() complete")
@@ -284,20 +295,24 @@ if __name__ == "__main__":
         if file_NoExt == middle:
             sample_data = rtalign_data.copy()#type: ignore
         else:
-            #Load data for sample
-            sample_data = {}
-            sample_data['ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
-            sample_data['ms1'] = sample_data['ms1'].apply(pd.to_numeric, errors = "ignore")
+            #Perform this check early in the script to catch any typos early
+            if PeakDetectionMethod == "PersistentHomology" or PeakDetectionMethod == "MaximumFiltration":
+                #Load data for sample
+                sample_data = {}
+                sample_data['ms1'] = deimos.load('{}.h5'.format(file_NoExt), key='ms1')
+                sample_data['ms1'] = sample_data['ms1'].apply(pd.to_numeric, errors = "ignore")
 
-            if ThresholdDataWithinScript is True:
-                #Threshold the data
-                sample_data['ms1'] = deimos.threshold(sample_data['ms1'], threshold=ms1_threshold)
-
-            if MS2DataPresent is True:
-                sample_data['ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
-                sample_data['ms2'] = sample_data['ms2'].apply(pd.to_numeric, errors = "ignore")
                 if ThresholdDataWithinScript is True:
-                    sample_data['ms2'] = deimos.threshold(sample_data['ms2'], threshold=ms2_threshold)#type: ignore
+                    #Threshold the data
+                    sample_data['ms1'] = deimos.threshold(sample_data['ms1'], threshold=ms1_threshold)
+
+                if MS2DataPresent is True:
+                    sample_data['ms2'] = deimos.load('{}.h5'.format(file_NoExt), key='ms2')
+                    sample_data['ms2'] = sample_data['ms2'].apply(pd.to_numeric, errors = "ignore")
+                    if ThresholdDataWithinScript is True:
+                        sample_data['ms2'] = deimos.threshold(sample_data['ms2'], threshold=ms2_threshold)#type: ignore
+            else:
+                raise CustomError("""Set PeakDetectionMethod as either PersistentHomology or MaximumFiltration only.""")
 
         #If desired, perform RT alignment on the sample
         if PerformRTAlignment is True:
@@ -308,6 +323,7 @@ if __name__ == "__main__":
                 sample_data = DEIMoSFunctions_RedundantStepsRemoved.RetentionTimeAlignment(file_NoExt, 
                                                                                            sample_data, 
                                                                                            rtalign_data, 
+                                                                                           PeakDetectionMethod,
                                                                                            rtalign_persisHomology_thres, 
                            rtalign_persis_thres, rtalign_partition_thres, rtalign_partition_size, 
                            rtalign_partition_overlap, rtalign_zipmap_thres, rtalign_zipmap_mz_dt_rt_tol, 
@@ -326,7 +342,8 @@ if __name__ == "__main__":
             pass
         else:
             sample_data = DEIMoSFunctions_RedundantStepsRemoved.DetectPeaks(file_NoExt, sample_data, 
-                                                                            PeakDet_smooth_data_radius,
+                                                                            PeakDetectionMethod,
+                                                                            PeakDet_smooth_data_radius, PeakDet_smooth_data_iterations,
                                                                             PeakDet_persistent_homology_radius, 
                                                                             MS2DataPresent)
 
@@ -346,8 +363,10 @@ if __name__ == "__main__":
         else:
             res_final = sample_data['ms1_peaks']
 
-        sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence'])
-        if MS2DataPresent is True:
+        #persistence column only present if the peaks were detected with Persistent Homology approach
+        if PeakDetectionMethod == "PersistentHomology":
+            sample_data['ms1_peaks'] = sample_data['ms1_peaks'].drop(columns=['persistence'])
+        if MS2DataPresent is True and PeakDetectionMethod == "PersistentHomology":
             sample_data['ms2_peaks'] = sample_data['ms2_peaks'].drop(columns=['persistence'])
 
         if PerformIsotopeDetection is True:
@@ -369,12 +388,14 @@ if __name__ == "__main__":
         # --> need to rename some of these columns (keeping those with the ms1_peak data with their original names)
         res_final.rename(columns={'intensity_x': 'intensity', 'mz_x': 'mz'}, inplace=True)
 
-        #Collect the Peak Shape info here for downstream correlation analysis
+        #Peak Shape Correlation and Gap Filling both require the raw data around the MS1 peaks to be inspected
+        # --> If either/both process is desired, proceed with inspecting raw data
         if PerformPeakShapeCorrelation is True:
             print("Collecting Peak Shape Data")
 
-            sample_data, res_final = CustomFunctions.CollectPeakShapeData(sample_data, res_final, PeakShapeCorr_mz_tol, 
-                                                                          PeakShapeCorr_RT_tol, PeakShapeCorr_DT_tol)
+            sample_data, res_final = CustomFunctions.InspectRawDataAroundMS1Peaks(sample_data, res_final, PeakShapeCorr_mz_tol, 
+                                                                          PeakShapeCorr_RT_tol, PeakShapeCorr_DT_tol, 
+                                                                          PerformPeakShapeCorrelation)
 
             print("Peak Shape Data Collected")
         elif PerformPeakShapeCorrelation is False:
@@ -395,18 +416,6 @@ if __name__ == "__main__":
         print("AgglomerativeClusteringConcatenateNewPeakData() complete")
 
     del rtalign_data, middle
-
-    print("===============================")
-    print("DEIMoS Script stopTime:", datetime.now())
-    print("Total process run time:", datetime.now() - startTime)
-    print("===============================")
-
-    print("===============================")
-    print("Objects stored locally from DEIMoS and custom steps:")
-    print(list(locals()))
-    print("===============================")
-
-    exit()
         
     # del [files, middle, sample, file_NoExt, ms1, ms1_peaks, ms2, 
         #   ms2_peaks, loopcount, ReadFilesInDirectory, FindMiddleFileForRTAlignment,
@@ -414,64 +423,58 @@ if __name__ == "__main__":
         #   ReferenceBasedAlignmentRT, AgglomerativeClusteringConcatenateNewPeakData] #type: ignore
     
     #Perform once final dataset for clustering (w/ all sample data) is created    
-    clustering = DEIMoSFunctions.AgglomerativeClusteringMainSteps(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol)
+    clustering = DEIMoSFunctions_RedundantStepsRemoved.AgglomerativeClusteringMainSteps(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol)
     print("AgglomerativeClusteringMainSteps() complete")
 
-    ccs_cal_pos = DEIMoSFunctions.CreateCCSCalObjects(tune_pos_file, 
+    ccs_cal_pos = DEIMoSFunctions_RedundantStepsRemoved.CreateCCSCalObjects(tune_pos_file, 
                                                     ccsCalib_mz, ccsCalib_ccs, 
                                                     ccsCalib_q, ccsCalib_buffer_mass, 
                                                     ccsCalib_mz_tol, ccsCalib_dt_tol)
     print("CreateCCSCalObjects() complete")
     del tune_pos_file
     
-    drifts_stripped = DEIMoSFunctions.CCSCalibrationSteps(ccs_cal_pos, clustering)
+    drifts_stripped = DEIMoSFunctions_RedundantStepsRemoved.CCSCalibrationSteps(ccs_cal_pos, clustering)
     print("CCSCalibrationSteps() complete")
-        
-    del [ms1, ms1_peaks, ms2, ms2_peaks] #type: ignore
     
-    drifts_gapfilled = CustomFunctions.GapFillingSteps(ccs_cal_pos, drifts_stripped, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_tol, 
-                    GapFill_trapz_dx)
-    print("GapFillingSteps() complete")
+    # drifts_gapfilled = CustomFunctions.GapFillingSteps(ccs_cal_pos, drifts_stripped, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_tol, 
+    #                 GapFill_trapz_dx)
+    # print("GapFillingSteps() complete")
     
-    PeakMerged_dataframe = CustomFunctions.PeakMergingSteps(drifts_gapfilled, PeakMerge_mz_ppm, PeakMerge_RT_tol, PeakMerge_CCS_tol)
-    print("PeakMergingSteps() complete")
+    # PeakMerged_dataframe = CustomFunctions.PeakMergingSteps(drifts_gapfilled, PeakMerge_mz_ppm, PeakMerge_RT_tol, PeakMerge_CCS_tol)
+    # print("PeakMergingSteps() complete")
     
-    CustomFunctions.MinimumDetectionThresholdSteps(PeakMerged_dataframe)
-    print("MinimumDetectionThresholdSteps() complete")
+    # CustomFunctions.MinimumDetectionThresholdSteps(PeakMerged_dataframe)
+    # print("MinimumDetectionThresholdSteps() complete")
 
-# =============================================================================
-#     CustomFunctions.MergeMS2Data()
-#     print("MergeMS2Data() complete")
-# =============================================================================
     
-    del [calib_files, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, 
-          ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol, 
-          PeakDet_intensity_thres, PeakDet_smooth_data_radius, PeakDet_persistent_homology_radius, 
-          MS2Extract_intensity_thres, MS2Extract_ms1_mz_subset_low, MS2Extract_ms1_dt_subset_low, 
-          MS2Extract_ms1_rt_subset_low, MS2Extract_ms1_mz_subset_high, 
-          MS2Extract_ms1_dt_subset_high, MS2Extract_ms1_rt_subset_high, 
-          MS2Extract_ms2_dt_subset_low, MS2Extract_ms2_rt_subset_low, 
-          MS2Extract_ms2_dt_subset_high, MS2Extract_ms2_rt_subset_high, 
-          MS2Extract_model_ce, MS2Extract_model_params, MS2Extract_ms1_decon_intensity_thres, 
-          MS2Extract_ms2_decon_intensity_thres, MS2Extract_construct_pairs_dt_low, 
-          MS2Extract_construct_pairs_rt_low, MS2Extract_construct_pairs_dt_high, 
-          MS2Extract_construct_pairs_rt_high, MS2Extract_construct_pairs_ce, 
-          MS2Extract_construct_pairs_error_tol, MS2Extract_config_extract_mz_low, 
-          MS2Extract_config_extract_dt_low, MS2Extract_config_extract_rt_low, 
-          MS2Extract_config_extract_mz_high, MS2Extract_config_extract_dt_high, 
-          MS2Extract_config_extract_rt_high, MS2Extract_decon_dt_resolution, 
-          MS2Extract_dt_score_threshold, isotope_intensity_thres, isotope_partition_size, 
-          isotope_partition_overlap, isotope_map_mz_dt_rt_tol, isotope_map_delta, 
-          isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, 
-          isotope_min_no_isotopes, isotope_slice_mz_low, isotope_slice_mz_high, 
-          isotope_plot_slice_mz_low, isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, 
-          isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, isotope_plot_slice_rt_high, 
-          rtalign_persisHomology_thres, rtalign_persis_thres, rtalign_partition_thres,
-          rtalign_partition_size, rtalign_partition_overlap, rtalign_zipmap_thres, 
-          rtalign_zipmap_mz_dt_rt_tol, agglo_mergeFeatures_mz_dt_rt_tol, agglo_multiSampPart_size, 
-          agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol, GapFill_mz_tol, 
-          GapFill_rt_tol, GapFill_CCS_tol, GapFill_trapz_dx, PeakMerge_mz_ppm, 
-          PeakMerge_RT_tol, PeakMerge_CCS_tol] #type: ignore
+    # del [calib_files, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, 
+    #       ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol, 
+    #       PeakDet_intensity_thres, PeakDet_smooth_data_radius, PeakDet_persistent_homology_radius, 
+    #       MS2Extract_intensity_thres, MS2Extract_ms1_mz_subset_low, MS2Extract_ms1_dt_subset_low, 
+    #       MS2Extract_ms1_rt_subset_low, MS2Extract_ms1_mz_subset_high, 
+    #       MS2Extract_ms1_dt_subset_high, MS2Extract_ms1_rt_subset_high, 
+    #       MS2Extract_ms2_dt_subset_low, MS2Extract_ms2_rt_subset_low, 
+    #       MS2Extract_ms2_dt_subset_high, MS2Extract_ms2_rt_subset_high, 
+    #       MS2Extract_model_ce, MS2Extract_model_params, MS2Extract_ms1_decon_intensity_thres, 
+    #       MS2Extract_ms2_decon_intensity_thres, MS2Extract_construct_pairs_dt_low, 
+    #       MS2Extract_construct_pairs_rt_low, MS2Extract_construct_pairs_dt_high, 
+    #       MS2Extract_construct_pairs_rt_high, MS2Extract_construct_pairs_ce, 
+    #       MS2Extract_construct_pairs_error_tol, MS2Extract_config_extract_mz_low, 
+    #       MS2Extract_config_extract_dt_low, MS2Extract_config_extract_rt_low, 
+    #       MS2Extract_config_extract_mz_high, MS2Extract_config_extract_dt_high, 
+    #       MS2Extract_config_extract_rt_high, MS2Extract_decon_dt_resolution, 
+    #       MS2Extract_dt_score_threshold, isotope_intensity_thres, isotope_partition_size, 
+    #       isotope_partition_overlap, isotope_map_mz_dt_rt_tol, isotope_map_delta, 
+    #       isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, 
+    #       isotope_min_no_isotopes, isotope_slice_mz_low, isotope_slice_mz_high, 
+    #       isotope_plot_slice_mz_low, isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, 
+    #       isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, isotope_plot_slice_rt_high, 
+    #       rtalign_persisHomology_thres, rtalign_persis_thres, rtalign_partition_thres,
+    #       rtalign_partition_size, rtalign_partition_overlap, rtalign_zipmap_thres, 
+    #       rtalign_zipmap_mz_dt_rt_tol, agglo_mergeFeatures_mz_dt_rt_tol, agglo_multiSampPart_size, 
+    #       agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol, GapFill_mz_tol, 
+    #       GapFill_rt_tol, GapFill_CCS_tol, GapFill_trapz_dx, PeakMerge_mz_ppm, 
+    #       PeakMerge_RT_tol, PeakMerge_CCS_tol] #type: ignore
 
     print("===============================")
     print("DEIMoS Script stopTime:", datetime.now())
