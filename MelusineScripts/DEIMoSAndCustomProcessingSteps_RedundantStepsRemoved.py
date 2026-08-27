@@ -181,7 +181,7 @@ class CustomError(Exception):
     pass
 
 #Set whether the pipeline will undergo MS2 data processing or not
-MS2DataPresent = False
+MS2DataPresent = True
 #Set whether the pipeline will start from the raw data or already-collected data in the Results folder
 StartAfterAgglomerativeClustering = True
 ##Peak Detection

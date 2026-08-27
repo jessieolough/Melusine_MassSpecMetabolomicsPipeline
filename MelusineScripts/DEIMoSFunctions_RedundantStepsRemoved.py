@@ -672,7 +672,7 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
     res.to_csv('Results/resWithClusters.csv', index=False)
 
     res = res.sort_values('cluster').reset_index(drop=True)
-    res = res.head(200)
+    res = res.iloc[50:250]
 
     print(len(res))
     print("res['cluster'] value range:", res['cluster'].min(), "to", res['cluster'].max())
@@ -692,8 +692,20 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
             # From those candidates, select row with the highest value in the 'intensity_ms2' list
             def max_intensity_ms2(row):
                 vals = row['intensity_ms2']
+                if not isinstance(vals, list) or isinstance(vals, str):
+                    # If vals is a string (like str(list)), do not wrap in list
+                    try:
+                        # Try to interpret string as list (from csv import)
+                        import ast
+                        evaluated = ast.literal_eval(vals)
+                        if isinstance(evaluated, list):
+                            vals = evaluated
+                        else:
+                            vals = [evaluated]
+                    except Exception:
+                        vals = [vals]
                 if isinstance(vals, list) and len(vals) > 0:
-                    return np.nanmax([v for v in vals if pd.notna(v)])
+                    return max([v for v in vals if pd.notna(v)])
                 return -np.inf
             idx = candidates.apply(max_intensity_ms2, axis=1).idxmax()
             # Keep the row with highest intensity_ms2 as is
@@ -718,6 +730,49 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
             # If no candidate, fall back to returning the entire group
             return group
 
+    def select_isotope_info(group):
+        # Check if any entry in 'error' is not nan (contains non-nan values)
+        # 'error' is a list; need to check for lists that contain at least one non-NaN value
+        def error_has_non_nan(row):
+            vals = row['error']
+            if isinstance(vals, list):
+                return any(pd.notna(v) for v in vals)
+            return pd.notna(vals)
+        # Find rows where error contains non-nan values
+        candidates = group[group.apply(error_has_non_nan, axis=1)]
+        
+        if len(candidates) > 0:
+            # From those candidates, select row with the lowest average value in the 'error' list
+            def avg_error(row):
+                vals = row['error']
+                if isinstance(vals, list) and len(vals) > 0:
+                    # Exclude NaN
+                    valid = [v for v in vals if pd.notna(v)]
+                    if len(valid) > 0:
+                        return np.nanmean(valid)
+                return np.inf
+            idx = candidates.apply(avg_error, axis=1).idxmin()
+            # Keep the row with lowest average error as is
+            best_row = group.loc[idx].copy()
+            # For all other rows, clear columns except for 'mz' and 'retention_time'
+            new_group = []
+            for i, row in group.iterrows():
+                if i == idx:
+                    #Keep the isotope info for the feature with the lowest average error
+                    new_group.append(row)
+                else:
+                    #Keep the non-isotope details for the other MS1 entries that are in the same cluster
+                    row_cleared = row.copy()
+                    for col in group.columns:
+                        if col in ["mz_y", "charge", "intensity_y", "multiple", "dx", "mz_iso",
+                                   "intensity_iso", "idx_iso", "error", "decay", "n"]:
+                            row_cleared[col] = np.nan
+                    new_group.append(row_cleared)
+            return pd.DataFrame(new_group)
+        else:
+            # If no candidate, fall back to returning the entire group
+            return group
+
     print(len(res))
 
     clustering = res
@@ -727,7 +782,14 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
 
     #The pd.pivot_table() function cannot consider multi-column conditions during aggregation
     # --> for certain values where this is required, the relevant entries will be kept within each cluster group
-    clustering = clustering.groupby('cluster', group_keys=False).apply(select_MS2_info).reset_index()
+    if MS2DataPresent is True:
+        #For clusters with multiple MS2 entries, keep the MS2 entry with the highest intensity
+        clustering = clustering.groupby('cluster', group_keys=False).apply(select_MS2_info).reset_index()
+
+    if PerformIsotopeDetection is True:
+        #For clusters with multiple isotope entries, keep the isotope entry with the lowest (average) error score
+        # (average as one entry can have multiple isotopes assigned)
+        clustering = clustering.groupby('cluster', group_keys=False).apply(select_isotope_info).reset_index()
 
     # now dump it to disk!
     clustering.to_csv('Results/clustering.csv', index=False)
