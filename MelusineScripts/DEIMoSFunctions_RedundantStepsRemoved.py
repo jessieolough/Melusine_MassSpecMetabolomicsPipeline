@@ -632,10 +632,13 @@ def AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_me
     return loopcount
     
     
-def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol):
+def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol,
+                                         MS2DataPresent, PerformIsotopeDetection, PerformPeakShapeCorrelation):
     #With thanks to Karl Burgess for scripting the majority this section
     
-    multipeaks_AllSamples = pd.read_csv("Results/multipeaks_AllSamples.csv")
+    # multipeaks_AllSamples = pd.read_csv("Results/multipeaks_AllSamples.csv")
+    #TODO: Change back to the file read in the above line of code
+    multipeaks_AllSamples = pd.read_csv("Results_ThreeSamplesReference/multipeaks_AllSamples.csv")
     
     #Code from Sean Colby
     # Partition the data
@@ -666,16 +669,118 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
     # res = res.drop(columns=["partition_idx", "sample_idx"])
     res = res.drop(columns=["partition_idx"])
 
+    res.to_csv('Results/resWithClusters.csv', index=False)
+
+    res = res.sort_values('cluster').reset_index(drop=True)
+    res = res.head(200)
+
+    print(len(res))
+    print("res['cluster'] value range:", res['cluster'].min(), "to", res['cluster'].max())
+
+    def select_MS2_info(group):
+        # Check if any entry in 'index_ms2' is not nan (contains non-nan values)
+        # 'index_ms2' is a list; need to check for lists that contain at least one non-NaN value
+        def index_ms2_has_non_nan(row):
+            vals = row['index_ms2']
+            if isinstance(vals, list):
+                return any(pd.notna(v) for v in vals)
+            return pd.notna(vals)
+        # Find rows where index_ms2 contains non-nan values
+        candidates = group[group.apply(index_ms2_has_non_nan, axis=1)]
+        
+        if len(candidates) > 0:
+            # From those candidates, select row with the highest value in the 'intensity_ms2' list
+            def max_intensity_ms2(row):
+                vals = row['intensity_ms2']
+                if isinstance(vals, list) and len(vals) > 0:
+                    return np.nanmax([v for v in vals if pd.notna(v)])
+                return -np.inf
+            idx = candidates.apply(max_intensity_ms2, axis=1).idxmax()
+            # Keep the row with highest intensity_ms2 as is
+            best_row = group.loc[idx].copy()
+            # For all other rows, clear columns except for 'mz' and 'retention_time'
+            new_group = []
+            for i, row in group.iterrows():
+                if i == idx:
+                    #Keep the MS2 info for the feature with the fragment with the highest intensity
+                    new_group.append(row)
+                else:
+                    #Keep the non-MS2 details for the other MS1 entries that are in the same cluster
+                    row_cleared = row.copy()
+                    for col in group.columns:
+                        if col in ["mz_ms1","drift_time_ms1","retention_time_ms1","intensity_ms1","persistence_ms1",
+                                   "index_ms2","mz_ms2","drift_time_ms2","retention_time_ms2","intensity_ms2",
+                                   "persistence_ms2","drift_time_raw_ms2","drift_time_error","drift_time_score"]:
+                            row_cleared[col] = np.nan
+                    new_group.append(row_cleared)
+            return pd.DataFrame(new_group)
+        else:
+            # If no candidate, fall back to returning the entire group
+            return group
+
+    print(len(res))
+
     clustering = res
     
     print("deimos.alignment.agglomerative_clustering() completed")
-    del multipeaks_AllSamples
+    del multipeaks_AllSamples, res
+
+    #The pd.pivot_table() function cannot consider multi-column conditions during aggregation
+    # --> for certain values where this is required, the relevant entries will be kept within each cluster group
+    clustering = clustering.groupby('cluster', group_keys=False).apply(select_MS2_info).reset_index()
 
     # now dump it to disk!
     clustering.to_csv('Results/clustering.csv', index=False)
     print("clustering.to_csv() completed")
 
     exit()
+
+    #Depending on which steps/data were kept for the earlier processing stages, different columns 
+    # will be present in the data object. --> need to modulate which values are included in the pivot_table function
+    
+    #Create values_list and aggfunc_commands with the details to keep that are always present
+    values_list = ["index_ms1","mz","drift_time","retention_time","intensity"]
+    aggfunc_commands = {
+        "index_ms1":list,
+        "mz":'mean',
+        "drift_time":'mean',
+        "retention_time":'mean',
+        "intensity":'mean'
+    }
+    if MS2DataPresent is True:
+        values_list.append(["index_ms2","mz_ms2","drift_time_ms2","retention_time_ms2","intensity_ms2",
+                            "drift_time_raw_ms2","drift_time_error","drift_time_score"])
+        aggfunc_commands.append({
+            "index_ms2",
+            "mz_ms2",
+            "drift_time_ms2",
+            "retention_time_ms2",
+            "intensity_ms2",
+            "drift_time_raw_ms2",
+            "drift_time_error",
+            "drift_time_score"
+        })
+    if PerformIsotopeDetection is True:
+        values_list.append(["mz_y","charge","intensity_y","multiple","dx","mz_iso","intensity_iso",
+                            "idx_iso","error","decay","n"])
+        aggfunc_commands.append({
+            "mz_y",
+            "charge",
+            "intensity_y",
+            "multiple",
+            "dx",
+            "mz_iso",
+            "intensity_iso",
+            "idx_iso",
+            "error",
+            "decay",
+            "n"
+        })
+    if PerformPeakShapeCorrelation is True:
+        values_list.append(["Peak_Shape"])
+        aggfunc_commands.append({
+            "Peak_Shape"
+        })
 
     # pivot the table to get it into the right format for ipaPy2
     # table headers: id(cluster), average mz, average rts, sample_intensities NOTE: no average drift time or ccs currently!
@@ -687,6 +792,8 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
     full_pivot.to_csv('Results/full_pivot.csv', index=False)
     print("full_pivot = pd.pivot_table() completed")
     del clustering
+
+    exit()
 
     #how to get rid of a column in a multilevel table
     #full_pivot = full_pivot.drop([('mz', 'mzs')], axis=1)
