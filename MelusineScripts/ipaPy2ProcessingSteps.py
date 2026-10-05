@@ -266,7 +266,6 @@ def MetaboliteAnnotationSteps(clusterFeaturesipaPy2):
 
 clusterFeaturesipaPy2 = True
 
-#TODO: Start of the process
 if __name__ == "__main__":
     
     processes=1

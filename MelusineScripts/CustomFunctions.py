@@ -21,12 +21,10 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
-def InspectRawDataAroundMS1Peaks(sample_data, res_final, PeakShapeCorr_mz_tol, PeakShapeCorr_RT_tol, 
-                         PeakShapeCorr_DT_tol, PerformPeakShapeCorrelation):
+def InspectRawDataAroundMS1Peaks(sample_data, res_final):
 
-    if PerformPeakShapeCorrelation is True:
-        #Add new column to contain the Peak Shape information
-        res_final['Peak_Shape'] = [None]*len(res_final)      
+    #Add new column to contain the Peak Shape information
+    res_final['Peak_Shape'] = [None]*len(res_final)      
 
     #Loop through each peak and collect peak shape information
     for index, row in sample_data['ms1_peaks'].iterrows():
@@ -50,75 +48,6 @@ def InspectRawDataAroundMS1Peaks(sample_data, res_final, PeakShapeCorr_mz_tol, P
 
         # Find the index of the intensity value (i.e., where intensity matches the current peak's intensity)
         closest_idx = (np.abs(intensities - intensity)).argmin()
-
-        ##############################################
-        ms1raw_subset_RTTol = ms1raw_subset.loc[(ms1raw_subset["retention_time"] >= RT-PeakShapeCorr_RT_tol) & (ms1raw_subset["retention_time"] <= RT+PeakShapeCorr_RT_tol)]
-        # ms1raw_subset = ms1raw_subset.loc[(ms1raw_subset["drift_time"] >= RT-PeakShapeCorr_DT_tol) & (ms1raw_subset["drift_time"] <= RT+PeakShapeCorr_DT_tol)]
-        ##############################################
-
-        ##############################################
-        # Scan left
-        left_idx = closest_idx
-        while left_idx > 0 and intensities[left_idx] > 2000:
-            left_idx -= 1
-        left_boundary = rt_values[left_idx]
-
-        # Scan right
-        right_idx = closest_idx
-        while right_idx < len(intensities) - 1 and intensities[right_idx] > 2000:
-            right_idx += 1
-        right_boundary = rt_values[right_idx]
-
-        # Use these as new boundaries
-        ms1raw_subset_IntThresOnly = ms1raw_subset.loc[
-            (ms1raw_subset["retention_time"] >= left_boundary) &
-            (ms1raw_subset["retention_time"] <= right_boundary)
-        ]
-        ##############################################
-
-        ##############################################
-        # Scan left
-        left_idx = closest_idx
-        min_intensity_idx = left_idx  # Track the index of the lowest intensity found so far
-        min_intensity = intensities[left_idx]
-        exceeded_original = False
-        while left_idx > 0 and intensities[left_idx] > 2000 and exceeded_original is False:
-            left_idx -= 1
-            if intensities[left_idx] < min_intensity:
-                min_intensity = intensities[left_idx]
-                min_intensity_idx = left_idx
-            if intensities[left_idx] > intensity:
-                exceeded_original = True
-        # If intensities exceeded the original peak intensity during search, pick the lowest-intensity encountered index
-        if exceeded_original:
-            left_boundary_IntSens = rt_values[min_intensity_idx]
-        else:
-            left_boundary_IntSens = rt_values[left_idx]
-
-        # Scan right
-        right_idx = closest_idx
-        min_intensity_idx = right_idx  # Track the index of the lowest intensity found so far
-        min_intensity = intensities[right_idx]
-        exceeded_original = False
-        while right_idx < len(intensities) - 1 and intensities[right_idx] > 2000 and not exceeded_original:
-            right_idx += 1
-            if intensities[right_idx] < min_intensity:
-                min_intensity = intensities[right_idx]
-                min_intensity_idx = right_idx
-            if intensities[right_idx] > intensity:
-                exceeded_original = True
-        # If intensities exceeded the original peak intensity during search, pick the lowest-intensity encountered index
-        if exceeded_original:
-            right_boundary_IntSens = rt_values[min_intensity_idx]
-        else:
-            right_boundary_IntSens = rt_values[right_idx]
-
-        # Use these as new boundaries
-        ms1raw_subset_IntSens = ms1raw_subset.loc[
-            (ms1raw_subset["retention_time"] >= left_boundary_IntSens) &
-            (ms1raw_subset["retention_time"] <= right_boundary_IntSens)
-        ]
-        ##############################################
 
         ##############################################
         # Find local minima to get retention time boundary for peak
@@ -183,116 +112,391 @@ def InspectRawDataAroundMS1Peaks(sample_data, res_final, PeakShapeCorr_mz_tol, P
         ]
         ##############################################
 
-        # # Get average intensity at each RT time point (potentially across different m/z and drift time values)
-        # fig, axes = plt.subplots(1, 4, figsize=(16, 6))
+        ms1raw_subset = ms1raw_subset_PeakRiseSens.groupby('retention_time').mean()
+        ms1raw_subset = ms1raw_subset.reset_index()
 
-        # # retention_time (user tolerance) vs intensity
-        # axes[0].plot(ms1raw_subset_RTTol['retention_time'], ms1raw_subset_RTTol['intensity'], marker='o', linestyle='-')
-        # axes[0].set_xlabel('Retention Time')
-        # axes[0].set_ylabel('Intensity')
-        # axes[0].set_title('Peak Shape: Retention Time \n(User Tolerance) vs Intensity')
-        # axes[0].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
-        # axes[0].legend()
+        #Round all values in the subset raw data --> improve downstream RT matching
+        ms1raw_subset = ms1raw_subset.round(3)     
+        
+        #Convert relevent information for Peak Shape into numpy array
+        ms1raw_subset = ms1raw_subset[['retention_time', 'intensity']]
+        ms1raw_subset = ms1raw_subset.to_numpy()
 
-        # # retention_time (local minima, low intensity thres only) vs intensity
-        # axes[1].plot(ms1raw_subset_IntThresOnly['retention_time'], ms1raw_subset_IntThresOnly['intensity'], marker='o', linestyle='-')
-        # axes[1].set_xlabel('Retention Time')
-        # axes[1].set_ylabel('Intensity')
-        # axes[1].set_title('Peak Shape: Retention Time \n(Local Minima, low intensity thres only) vs Intensity')
-        # axes[1].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
-        # axes[1].legend()
-
-        # # retention_time (local minima, high intensity sensitive) vs intensity
-        # axes[2].plot(ms1raw_subset_IntSens['retention_time'], ms1raw_subset_IntSens['intensity'], marker='o', linestyle='-')
-        # axes[2].set_xlabel('Retention Time')
-        # axes[2].set_ylabel('Intensity')
-        # axes[2].set_title('Peak Shape: Retention Time \n(Local Minima, low intensity thres with \nhigh intensity sensitive) vs Intensity')
-        # axes[2].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
-        # axes[2].legend()
-
-        # # retention_time (local minima, low intensity thres only) vs intensity
-        # axes[3].plot(ms1raw_subset_PeakRiseSens['retention_time'], ms1raw_subset_PeakRiseSens['intensity'], marker='o', linestyle='-')
-        # axes[3].set_xlabel('Retention Time')
-        # axes[3].set_ylabel('Intensity')
-        # axes[3].set_title('Peak Shape: Retention Time \n(Local Minima, Peak Rise Sensitive) vs Intensity')
-        # axes[3].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
-        # axes[3].legend()
-
-        # # Add overall super title with mz, RT, DT, and intensity
-        # fig.subplots_adjust(top=0.85)
-        # fig.suptitle(f"Peak Shape Data: mz={mz:.5f}, RT={RT:.3f}, DT={DT:.3f}, Intensity={intensity:.0f}", fontsize=14)
-
-        # plt.tight_layout()
-        # plt.savefig(f"Results/PeakShape_Idx{index}_mz{mz}_RT{RT}_DT{DT}.png", bbox_inches='tight')
-        # # plt.show()
-        # plt.close()
-
-        if PerformPeakShapeCorrelation is True:
-            ms1raw_subset = ms1raw_subset_PeakRiseSens.groupby('retention_time').mean()
-            ms1raw_subset = ms1raw_subset.reset_index()
-
-            #Round all values in the subset raw data --> improve downstream RT matching
-            ms1raw_subset = ms1raw_subset.round(3)     
-            
-            #Convert relevent information for Peak Shape into numpy array
-            ms1raw_subset = ms1raw_subset[['retention_time', 'intensity']]
-            ms1raw_subset = ms1raw_subset.to_numpy()
-
-            #Add the peak shape information into the row in res_final corresponding to this MS1 peak
-            res_final.at[index, 'Peak_Shape'] = ms1raw_subset
+        #Add the peak shape information into the row in res_final corresponding to this MS1 peak
+        res_final.at[index, 'Peak_Shape'] = ms1raw_subset
 
     return sample_data, res_final
 
+def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShapeCorr_CorrThres):
 
-def GapFillingSteps(ccs_cal_pos, drifts_stripped, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_tol, 
-                    GapFill_trapz_dx):
-# def GapFillingSteps(ccs_cal_pos):
+    #Correlate Peak Shapes
+    # =============================================================================
+    #Keep only the peak shape information
+    PeakShape_df = feature_table[['Peak_Shape']]
+
+    # print(PeakShape_df[['LongestPeakShape']])
+    # print(type(PeakShape_df[['LongestPeakShape']]))
+
+    #Correlate the selected Peak Shapes for each feature
+    # correlation_matrix = PeakShape_df['LongestPeakShape'].corr()
+    # correlation_matrix = np.corrcoef(PeakShape_df['LongestPeakShape'])
+    #Get RT information (first element of the array)
+    # PeakShape_list = PeakShape_df['Peak_Shape'].tolist()
+
+    #TODO: for development, only keep specific number
+    PeakShape_df = PeakShape_df[0:10]
+    print(PeakShape_df)
+
+    RT_ShapeInfo = []
+    Ints_ShapeInfo = []
+
+    import ast
+
+    def parse_string_array(s):
+        # Remove space at brackets
+        s = s.replace('[ ', '[').replace(' ]', ']')
+        # Add commas between numbers
+        lines = [line.replace(' ', ',') for line in s.strip().split('\n')]
+        s_fixed = '\n'.join(lines)
+        # Convert to list of lists, then to numpy array
+        try:
+            arr = np.array(ast.literal_eval(s_fixed))
+            return arr
+        except Exception as e:
+            print("Error parsing:", s)
+            return np.array([])  # or np.nan
+
+    PeakShape_df['peak_array'] = PeakShape_df['Peak_Shape'].apply(parse_string_array)
+
+    PeakShape_df['retention_time'] = PeakShape_df['peak_array'].apply(lambda arr: arr[:, 0].tolist() if arr.size else [])
+    PeakShape_df['intensity'] = PeakShape_df['peak_array'].apply(lambda arr: arr[:, 1].tolist() if arr.size else [])
+
+    PeakShape_df.to_csv('Results_TestPeakShapeCorrelations/PeakShape_df.csv', index=False)
+
+    #For each feature: separate the peak shapes array so that RTs and Ints are in separate lists
+    # to allow the the Ints to be correlated against each other
+    for index, row in PeakShape_df.iterrows():
+        RT_ShapeInfo.append(row['retention_time'])
+        Ints_ShapeInfo.append(row['intensity'])
+
+    #Find features with shared RT values to perform correlation analysis against
+    print(len(RT_ShapeInfo))
+
+    '''
+    To efficiently correlate each feature, go through each RT_group but SKIP each RT_group as you go along
+    e.g. compare a, b, c, d
+    = a x b, a x c, a x d
+    then skip a
+    = b x c, b x d
+    then skip b
+    = c x d
+    --> get all relevant combinations without duplicates
+    '''
+
+    RT_position_1_list = list()
+    RT_position_2_list = []
+    correlation_list = []
+
+    for RT_position_1 in range(0,len(RT_ShapeInfo),1):
+        
+        for RT_position_2 in range(RT_position_1+1, len(RT_ShapeInfo), 1):
+            #Check if either set of features have intensities recorded at the same RTs
+            shared_items = list(set(RT_ShapeInfo[RT_position_1]).intersection(RT_ShapeInfo[RT_position_2]))
+            #Only do correlation analysis if there are a minimum of 3 shared datapoints
+            if len(shared_items) >= CorrelationMinimumNoDatapoints:
+                #Get position index of shared RT groups (to get respective Intensity values)
+                RT_position_ind_1 = {val: [i for i, x in enumerate(RT_ShapeInfo[RT_position_1]) if x == val] for val in shared_items}
+                RT_position_ind_2 = {val: [i for i, x in enumerate(RT_ShapeInfo[RT_position_2]) if x == val] for val in shared_items}
+                #Get index values out of the dictionary object
+                RT_position_ind_1 = list(RT_position_ind_1.values())
+                RT_position_ind_2 = list(RT_position_ind_2.values())
+                # Flatten the list to remove the [] around each item
+                RT_position_ind_1 = [item for sublist in RT_position_ind_1 for item in sublist]
+                RT_position_ind_2 = [item for sublist in RT_position_ind_2 for item in sublist]
+                #Put index lists into order
+                RT_position_ind_1.sort()
+                RT_position_ind_2.sort()
+                
+                #Get the respective intensity values
+                intensities_1 = Ints_ShapeInfo[RT_position_1]
+                intensities_2 = Ints_ShapeInfo[RT_position_2]
+                intensities_1 = [intensities_1[i] for i in RT_position_ind_1]
+                intensities_2 = [intensities_2[i] for i in RT_position_ind_2]
+                # print(intensities_1)
+                # print(intensities_2)
+                
+                #Perform peak shape correlation
+                correlation = np.corrcoef(intensities_1, intensities_2)
+                correlation = correlation[0,1]
+                # print(correlation)
+                
+                #Collect correlation data for downstream grouping
+                RT_position_1_list.append(RT_position_1)
+                RT_position_2_list.append(RT_position_2)
+                correlation_list.append(correlation)
+                
+            else:
+                pass
+        # print("------------")
+        
+    correlations_df = pd.DataFrame({"RT_position_1":RT_position_1_list, 
+                                    "RT_position_2":RT_position_2_list, 
+                                    "Correlations":correlation_list})
+        
+    correlations_df.to_csv("correlations_df.csv")
+
+    from collections import defaultdict
+
+    def find_groups_with_coeff_df(df, threshold):
+        """
+        Groups items together if their correlation coefficient (from a dataframe)
+        is above the threshold.
+
+        Args:
+            df (pd.DataFrame): DataFrame with columns ['RT_position_1', 'RT_position_2', 'Correlations']
+            threshold (float): Minimum correlation coefficient to consider for grouping
+
+        Returns:
+            list of sets: Each set contains items in the same group
+        """
+        adj = defaultdict(set)
+        # Iterate over DataFrame rows
+        for _, row in df.iterrows():
+            item1 = row['RT_position_1']
+            item2 = row['RT_position_2']
+            coeff = row['Correlations']
+            if coeff >= threshold:
+                adj[item1].add(item2)
+                adj[item2].add(item1)
+        visited = set()
+        groups = []
+
+        def dfs(node, group):
+            visited.add(node)
+            group.add(node)
+            for neighbor in adj[node]:
+                if neighbor not in visited:
+                    dfs(neighbor, group)
+
+        for node in adj:
+            if node not in visited:
+                group = set()
+                dfs(node, group)
+                groups.append(group)
+
+        return groups
+
+    threshold = 0.85
+    groups = find_groups_with_coeff_df(correlations_df[['RT_position_1', 'RT_position_2', 'Correlations']], 
+                                       threshold)
+    print(groups)
+
+    # Assign PeakShapeCorrGroups: for each index, find which group it belongs to and set group index as value
+    group_map = {}
+    for i, group in enumerate(groups):
+        for idx in group:
+            group_map[idx] = i
+    PeakShape_df['PeakShapeCorrGroups'] = PeakShape_df.index.map(lambda x: group_map.get(x, np.nan))
+
+    print(PeakShape_df)
+
+    return feature_table
+
+
+def GapFillingSteps(feature_table, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_tol, 
+                    GapFill_trapz_dx, files):
     
-    # drifts_stripped = pd.read_csv("Results/drifts_stripped_final.csv")
-    drifts_stripped = drifts_stripped.apply(pd.to_numeric, errors = "ignore")
-    # drifts_stripped = drifts_stripped.sort_values(['POS_FBS_IM_MSMS_40kTF_400TR_1'], 
-    #                                               ascending=[False])
-    # drifts_stripped = drifts_stripped[90:110]
-    # drifts_stripped = drifts_stripped.iloc[[7, 9, 11, 19, 60, 70, 72, 90, 97, 105, 107, 108]]
-    # drifts_stripped = drifts_stripped.iloc[[7, 9, 11, 19]]
-    # ids_to_keep = [17271, 17194, 17204, 17153, 17117, 
-    #                 17033, 16909, 16939, 16886, 16778, 
-    #                 16678, 16554, 16518, 16424, 16296, 
-    #                 16226, 15970, 15673, 15240, 15071, 
-    #                 14903, 14346, 14017, 13481, 12885, 
-    #                 12607, 11891, 11112, 10212, 9875, 
-    #                 9647, 8147, 5609, 3167, 2120, 
-    #                 1942, 1285, 597, 181, 90]
-    # drifts_stripped = drifts_stripped.loc[drifts_stripped['ids'].isin(ids_to_keep)]
+    #TODO: Change back to the file read in the above line of code
+    res = pd.read_csv("Results_TenSamplesReference/res.csv")
+    res = res.apply(pd.to_numeric, errors = "ignore")
+
+    #TODO: Temporary subsetting
+    print(res[['sample_id', 'mz', 'drift_time','retention_time','intensity', 'cluster']])
+    # files = [f.replace('.h5', '') for f in files]
+    # res = res[res['sample_id'].isin(files)]
+    # print(files)
+    # print(res[['sample_id', 'mz', 'drift_time','retention_time','intensity', 'cluster']])
+    res = res.reset_index(drop=True)
+    # Sort res by 'cluster'
+    res = res.sort_values(['intensity'],ascending=False)
+    # # Get the first three unique cluster values
+    # first_three_clusters = res['cluster'].unique()[0:6]
+    # # Subset res to include only rows with these cluster values
+    # res = res[res['cluster'].isin(first_three_clusters)]
+    res = res[21:50]
+    res = res.reset_index(drop=True)
     
-    print("Set Tolerances:")
-    print("mz_tol:", GapFill_mz_tol, ", RT_tol:", GapFill_rt_tol, ", CCS_tol:", GapFill_CCS_tol)
-    
-    print(drifts_stripped[['mzs', 'RTs', 'drifts', 'ids', 'CCS']])
+    res['GapFillStatus'] = "FromPeakDetection"
+    res['FeatureMissingIn'] = None
+
+    print(res[['sample_id', 'mz', 'drift_time','retention_time','intensity', 'cluster', 'GapFillStatus', 'FeatureMissingIn']])
+
+    samples = list(res['sample_id'].unique())
+    print(samples)
+
+    # Group by 'cluster' and loop through each cluster as a way to help group features
+    # Make a list of which samples are missing a particular feature
+    for cluster_id, cluster_df in res.groupby('cluster'):
+        # # For each unique (mz, drift_time, retention_time), find missing samples
+        # unique_features = cluster_df[['mz', 'drift_time', 'retention_time']].drop_duplicates()
+        for idx, feat in cluster_df[['mz', 'drift_time', 'retention_time']].iterrows():
+            mz_val = feat['mz']
+            dt_val = feat['drift_time']
+            rt_val = feat['retention_time']
+            feature_rows = cluster_df[
+                (cluster_df['mz'] == mz_val) &
+                (cluster_df['drift_time'] == dt_val) &
+                (cluster_df['retention_time'] == rt_val)
+            ]
+            present_samples = feature_rows['sample_id'].unique()
+            missing_samples = [s for s in samples if s not in present_samples]
+            print(f"Feature mz={mz_val}, drift_time={dt_val}, retention_time={rt_val} missing samples: {missing_samples}")
+            # Add missing_samples as "FeatureMissingIn" for this feature based on its index in res
+            res.at[idx, 'FeatureMissingIn'] = missing_samples #type: ignore
+
+    print(res[['sample_id', 'mz', 'drift_time','retention_time','intensity', 'cluster', 'GapFillStatus', 'FeatureMissingIn']])
+
+    # For each sample (--> raw data only needs to be read in once), check which features it is missing and only Gap Fill for those
+    for sample in samples:
+        print("========================")
+        print(sample)
+
+        #TODO: For evaluation, do not subset res --> can see peaks that are meant to be there
+        res_sub = res.copy()
+
+        # #Subset res to only contain features that are missing in that sample
+        # res_sub = res[res['FeatureMissingIn'].apply(lambda x: isinstance(x, list) and sample in x if x is not None else False)]
+        # print(res_sub[['sample_id', 'mz', 'drift_time','retention_time','intensity', 'FeatureMissingIn']])
+
+        #TODO: Change folder name that the raw data is read from
+        #Load raw data
+        sample_raw = deimos.load('Results_TenSamplesReference/RTAligned_{}.h5'.format(sample), key='ms1')
+
+        #Loop through each peak and collect peak intensity information
+        for index, row in res_sub.iterrows():
+            mz = row['mz']
+            RT = row['retention_time']
+            DT = row['drift_time']
+            intensity = row['intensity']
+            print(mz, RT, DT, intensity, row['FeatureMissingIn'], row['Peak_Shape'])
+
+            #Subset raw data within user-specified tolerances to find peak info
+            sampleraw_subset = sample_raw[sample_raw["mz"] == mz]
+            sampleraw_subset = sampleraw_subset[sampleraw_subset["drift_time"] == DT]
+            if sampleraw_subset.empty is True:
+                print("No datapoints present")
+            else:
+                print("datapoints present")
+                # Sort by retention time
+                sampleraw_subset = sampleraw_subset.sort_values("retention_time")
+                #Find local minima to get retention time boundary for peak
+                intensities = sampleraw_subset["intensity"].values
+                rt_values = sampleraw_subset["retention_time"].values
+                # Find the index of the intensity value (i.e., where intensity matches the current peak's intensity)
+                closest_idx = (np.abs(intensities - intensity)).argmin()
+
+                #TODO: Keep RT windows thresholding for evaluation only
+                sampleraw_subset_RTTol = sampleraw_subset.loc[(sampleraw_subset["retention_time"] >= RT-2) & (sampleraw_subset["retention_time"] <= RT+2)]
+
+                # Find local minima to get retention time boundary for peak
+                # Scan left
+                left_idx = closest_idx
+                min_intensity_idx = left_idx  # Track the index of the lowest intensity found so far
+                min_intensity = intensities[left_idx]
+                consecutive_increase = 0
+                last_intensity = intensities[left_idx]
+                while left_idx > 0:# and intensities[left_idx] > 2000:
+                    left_idx -= 1
+                    current_intensity = intensities[left_idx]
+                    if current_intensity < min_intensity:
+                        min_intensity = current_intensity
+                        min_intensity_idx = left_idx
+                        consecutive_increase = 0  # reset counter on new minimum
+                    else:
+                        if current_intensity > last_intensity:
+                            consecutive_increase += 1
+                        else:
+                            consecutive_increase = 0
+                    last_intensity = current_intensity
+                    if consecutive_increase >= 5:
+                        break
+                left_boundary_PeakRiseSens = rt_values[min_intensity_idx]
+
+                # Scan right
+                right_idx = closest_idx
+                min_intensity_idx = right_idx  # Track the index of the lowest intensity found so far
+                min_intensity = intensities[right_idx]
+                consecutive_increase = 0
+                last_intensity = intensities[right_idx]
+                while right_idx < len(intensities) - 1:# and intensities[right_idx] > 2000:
+                    right_idx += 1
+                    current_intensity = intensities[right_idx]
+                    if current_intensity < min_intensity:
+                        min_intensity = current_intensity
+                        min_intensity_idx = right_idx
+                        consecutive_increase = 0  # reset counter on new minimum
+                    else:
+                        if current_intensity > last_intensity:
+                            consecutive_increase += 1
+                        else:
+                            consecutive_increase = 0
+                    last_intensity = current_intensity
+                    if consecutive_increase >= 5:
+                        break
+                right_boundary_PeakRiseSens = rt_values[min_intensity_idx]
+
+                # Use these as new boundaries
+                sampleraw_subset_PeakRiseSens = sampleraw_subset.loc[
+                    (sampleraw_subset["retention_time"] >= left_boundary_PeakRiseSens) &
+                    (sampleraw_subset["retention_time"] <= right_boundary_PeakRiseSens)
+                ]
+
+                # Get average intensity at each RT time point (potentially across different m/z and drift time values)
+                fig, axes = plt.subplots(1, 2, figsize=(8, 6))
+
+                # retention_time (user tolerance) vs intensity
+                axes[0].plot(sampleraw_subset_RTTol['retention_time'], sampleraw_subset_RTTol['intensity'], marker='o', linestyle='-')
+                axes[0].set_xlabel('Retention Time')
+                axes[0].set_ylabel('Intensity')
+                axes[0].set_title('Peak Shape: Retention Time \n(User Tolerance) vs Intensity')
+                axes[0].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+                axes[0].legend()
+
+                # retention_time (local minima, Peak Rise Sensitive) vs intensity
+                axes[1].plot(sampleraw_subset_PeakRiseSens['retention_time'], sampleraw_subset_PeakRiseSens['intensity'], marker='o', linestyle='-')
+                axes[1].set_xlabel('Retention Time')
+                axes[1].set_ylabel('Intensity')
+                axes[1].set_title('Peak Shape: Retention Time \n(Local Minima, Peak Rise Sensitive) vs Intensity')
+                axes[1].scatter([RT], [intensity], color='red', zorder=10, label='Peak')
+                axes[1].legend()
+
+                # Add overall super title with mz, RT, DT, and intensity
+                is_present = sample not in row['FeatureMissingIn']
+
+                fig.subplots_adjust(top=0.85)
+                fig.suptitle(f"Sample {sample}: \n mz={mz:.5f}, RT={RT:.3f}, DT={DT:.3f}, Intensity={intensity:.0f} \n FeaturePresent = {is_present}", fontsize=14)
+
+                plt.tight_layout()
+                plt.savefig(f"Results_TenSamplesReference/GapFilling_{sample}_mz{mz}_RT{RT}_DT{DT}.png", bbox_inches='tight')
+                plt.show()
+                plt.close()
+
+    exit()
     
     #Loop through samples/columns
-    
-    non_samples = ['mzs', 'RTs', 'drifts', 'ids', 'CCS']
-    total_columns = list(drifts_stripped.columns)
-    samples = list(set(total_columns) - set(non_samples))
-    
-    drifts_gapfilled = drifts_stripped.copy()
+    drifts_gapfilled = res.copy()
     
     # print(drifts_gapfilled[samples])
     
     # iterate through specific columns of the dataframe
-    for sample in drifts_gapfilled[samples]:
-        # print(drifts_gapfilled[sample])
-        # print(sample)
-        # print("-=-=-=-=-")
+    for sample in list(drifts_gapfilled[sample_id].unique()):
+        print("-=-=-=-=-")
+        print(sample)
         #Load data
-        ms1_raw_df = deimos.load('{}.h5'.format(sample), key='ms1')
+        ms1_raw_df = deimos.load('RTAligned_{}.h5'.format(sample), key='ms1')
         #Threshold data
         ms1_raw_df = deimos.threshold(ms1_raw_df, threshold=500)
-        #Calculate CCS values from the drift times in the raw data
-        ms1_raw_df['CCS'] = ccs_cal_pos.arrival2ccs(mz=ms1_raw_df['mz'], 
-                                                    ta=ms1_raw_df['drift_time'], 
-                                                    q=1)
+
         # Loop through features in each sample
         for index_f, row in drifts_gapfilled[sample].items():
             # print(index_f, row)
@@ -300,7 +504,8 @@ def GapFillingSteps(ccs_cal_pos, drifts_stripped, GapFill_mz_tol, GapFill_rt_tol
             # print(feature)
             feature_row = feature.loc[index_f]
             feature = feature_row[sample]
-            
+
+            #Only Gap Fill 
             if np.isnan(feature) == True:
                 #GapFill
                 # print("NaN:", feature)
@@ -611,7 +816,7 @@ def PeakMergingSteps(drifts_gapfilled, PeakMerge_mz_ppm, PeakMerge_RT_tol, PeakM
     
     return PeakMerged_dataframe
     
-def MinimumDetectionThresholdSteps(PeakMerged_dataframe):
+def MinimumDetectionThresholdSteps(PeakMerged_dataframe, minimum_detection_group_threshold):
     #IMPORTANT
     #1) Run the AssignSampleGroupings.py file (only needs to be done once)
     #2) Fill in the Group column (and SAVE it!)
@@ -640,8 +845,6 @@ def MinimumDetectionThresholdSteps(PeakMerged_dataframe):
     #Remove non-sample names from list
     to_remove = ['mzs', 'RTs', 'drifts', 'ids', 'CCS', 'RT_bin']
     samples = [x for x in samples if x not in to_remove]
-
-    minimum_detection_group_threshold = 0.50 #33% - PLEASE give to 2 significant figures!
 
     features_kept = pd.DataFrame()
     features_removed = pd.DataFrame()

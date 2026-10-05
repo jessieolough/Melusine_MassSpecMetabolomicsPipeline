@@ -70,9 +70,10 @@ def FindMiddleFileForRTAlignment(ms1_threshold, ms2_threshold, PeakDetectionMeth
                                PeakDet_smooth_data_radius, PeakDet_smooth_data_iterations,
                                PeakDet_persistent_homology_radius, MS2DataPresent)
 
-    # #Just save the middle/reference file as it is
-    # deimos.save('Results/RTAligned_{}.h5'.format(middle), rtalign_data['ms1'], key='ms1')
-    # deimos.save('Results/RTAligned_{}.h5'.format(middle), rtalign_data['ms2'], key='ms2')
+    #Just save the middle/reference file as it is
+    deimos.save('Results/RTAligned_{}.h5'.format(middle), rtalign_data['ms1'], key='ms1', mode='w')
+    if MS2DataPresent is True:
+        deimos.save('Results/RTAligned_{}.h5'.format(middle), rtalign_data['ms2'], key='ms2', mode='a')
     
     return middle, rtalign_data
 
@@ -364,6 +365,12 @@ def RetentionTimeAlignment(file_NoExt, sample_data, rtalign_data, PeakDetectionM
     sample_data.pop('ms1_peaks', None)
     sample_data.pop('ms2_peaks', None)
 
+    if SaveRTAlignmentDataFiles is True:
+        #Save Data as HD5 file
+        deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), sample_data['ms1'], key='ms1', mode='w')
+        if MS2DataPresent:
+            deimos.save('Results/RTAligned_{}.h5'.format(file_NoExt), sample_data['ms2'], key='ms2', mode='a')
+
     return sample_data
     
 def ExtractMS2Spectra(sample_data, file_NoExt, MS2Extract_intensity_thres, MS2Extract_ms1_mz_subset_low, MS2Extract_ms1_dt_subset_low, 
@@ -598,36 +605,40 @@ def DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size,
 
     return sample_data, res_final
         
-def AgglomerativeClusteringConcatenateNewPeakData(loopcount, res_final, agglo_mergeFeatures_mz_dt_rt_tol, 
+def ConcatenateNewPeakData(loopcount, res_final, agglo_mergeFeatures_mz_dt_rt_tol, 
                                                   file_NoExt):
-    #With thanks to Karl Burgess for scripting the majority this section
+    # #With thanks to Karl Burgess for scripting the majority this section
     
-    # create an empty dataframe to store the clustered peaks
-    multipeaks = pd.DataFrame()
+    # # create an empty dataframe to store the clustered peaks
+    # multipeaks = pd.DataFrame()
 
-    #Use res_final object with MS1 and MS2 data
-    merged_peaks = deimos.alignment.merge_features(features = res_final,
-                                            dims=['mz', 'drift_time',
-                                                'retention_time'],
-                                            tol=agglo_mergeFeatures_mz_dt_rt_tol,
-                                            relative = [True, True, False])                                                        
-    # next bit is sort of cheating. Fake up a multi-file dataframe by adding the filename and loopcounter as columns
-    merged_peaks.insert(0, 'sample_idx', loopcount)#type: ignore
-    merged_peaks.insert(0, 'sample_id', file_NoExt)#type: ignore
+    # #Use res_final object with MS1 and MS2 data
+    # merged_peaks = deimos.alignment.merge_features(features = res_final,
+    #                                         dims=['mz', 'drift_time',
+    #                                             'retention_time'],
+    #                                         tol=agglo_mergeFeatures_mz_dt_rt_tol,
+    #                                         relative = [True, True, False])                                                        
+    # # next bit is sort of cheating. Fake up a multi-file dataframe by adding the filename and loopcounter as columns
+    # merged_peaks.insert(0, 'sample_idx', loopcount)#type: ignore
+    # merged_peaks.insert(0, 'sample_id', file_NoExt)#type: ignore
     
-    # main bit of work - concatenate the dataframe with the new peak data.
-    multipeaks = pd.concat([multipeaks, merged_peaks])
+    # # main bit of work - concatenate the dataframe with the new peak data.
+    # multipeaks = pd.concat([multipeaks, merged_peaks])
+    
+    # Add sample_id and sample_idx columns to keep track of which features belong to which samples
+    res_final.insert(0, 'sample_idx', loopcount)
+    res_final.insert(0, 'sample_id', file_NoExt)
     loopcount=loopcount+1
     
     #Append data to existing csv file (prevent system crashing)
-    multipeaks.to_csv('Results/{}/AgglomerativeClustering/multipeaks.csv'.format(file_NoExt), index=False)
+    res_final.to_csv('Results/{}/AgglomerativeClustering/res_final.csv'.format(file_NoExt), index=False)
     #Check if the file already exists
-    if os.path.isfile("Results/multipeaks_AllSamples.csv") == True: #True if present
+    if os.path.isfile("Results/res_final_AllSamples.csv") == True: #True if present
         #Append to file
-        multipeaks.to_csv('Results/multipeaks_AllSamples.csv', mode='a', index=False, header=False)
+        res_final.to_csv('Results/res_final_AllSamples.csv', mode='a', index=False, header=False)
     else:
         #Create file
-        multipeaks.to_csv('Results/multipeaks_AllSamples.csv', index=False)
+        res_final.to_csv('Results/res_final_AllSamples.csv', index=False)
         
     return loopcount
     
@@ -638,7 +649,7 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
     
     # multipeaks_AllSamples = pd.read_csv("Results/multipeaks_AllSamples.csv")
     #TODO: Change back to the file read in the above line of code
-    multipeaks_AllSamples = pd.read_csv("Results_ThreeSamplesReference/multipeaks_AllSamples.csv")
+    multipeaks_AllSamples = pd.read_csv("Results_TenSamplesReference/multipeaks_AllSamples.csv")
     
     #Code from Sean Colby
     # Partition the data
@@ -669,234 +680,278 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
     # res = res.drop(columns=["partition_idx", "sample_idx"])
     res = res.drop(columns=["partition_idx"])
 
-    res.to_csv('Results/resWithClusters.csv', index=False)
-
-    res = res.sort_values('cluster').reset_index(drop=True)
-    res = res.iloc[50:250]
+    #TODO: Change directories back to Results folder
+    res.to_csv('Results_TenSamplesReference/resWithClusters.csv', index=False)
 
     print(len(res))
     print("res['cluster'] value range:", res['cluster'].min(), "to", res['cluster'].max())
 
-    def select_MS2_info(group):
-        # Check if any entry in 'index_ms2' is not nan (contains non-nan values)
-        # 'index_ms2' is a list; need to check for lists that contain at least one non-NaN value
-        def index_ms2_has_non_nan(row):
-            vals = row['index_ms2']
-            if isinstance(vals, list):
-                return any(pd.notna(v) for v in vals)
-            return pd.notna(vals)
-        # Find rows where index_ms2 contains non-nan values
-        candidates = group[group.apply(index_ms2_has_non_nan, axis=1)]
-        
-        if len(candidates) > 0:
-            # From those candidates, select row with the highest value in the 'intensity_ms2' list
-            def max_intensity_ms2(row):
-                vals = row['intensity_ms2']
-                if not isinstance(vals, list) or isinstance(vals, str):
-                    # If vals is a string (like str(list)), do not wrap in list
-                    try:
-                        # Try to interpret string as list (from csv import)
-                        import ast
-                        evaluated = ast.literal_eval(vals)
-                        if isinstance(evaluated, list):
-                            vals = evaluated
-                        else:
-                            vals = [evaluated]
-                    except Exception:
-                        vals = [vals]
-                if isinstance(vals, list) and len(vals) > 0:
-                    return max([v for v in vals if pd.notna(v)])
-                return -np.inf
-            idx = candidates.apply(max_intensity_ms2, axis=1).idxmax()
-            # Keep the row with highest intensity_ms2 as is
-            best_row = group.loc[idx].copy()
-            # For all other rows, clear columns except for 'mz' and 'retention_time'
-            new_group = []
-            for i, row in group.iterrows():
-                if i == idx:
-                    #Keep the MS2 info for the feature with the fragment with the highest intensity
-                    new_group.append(row)
-                else:
-                    #Keep the non-MS2 details for the other MS1 entries that are in the same cluster
-                    row_cleared = row.copy()
-                    for col in group.columns:
-                        if col in ["mz_ms1","drift_time_ms1","retention_time_ms1","intensity_ms1","persistence_ms1",
-                                   "index_ms2","mz_ms2","drift_time_ms2","retention_time_ms2","intensity_ms2",
-                                   "persistence_ms2","drift_time_raw_ms2","drift_time_error","drift_time_score"]:
-                            row_cleared[col] = np.nan
-                    new_group.append(row_cleared)
-            return pd.DataFrame(new_group)
-        else:
-            # If no candidate, fall back to returning the entire group
-            return group
-
-    def select_isotope_info(group):
-        # Check if any entry in 'error' is not nan (contains non-nan values)
-        # 'error' is a list; need to check for lists that contain at least one non-NaN value
-        def error_has_non_nan(row):
-            vals = row['error']
-            if isinstance(vals, list):
-                return any(pd.notna(v) for v in vals)
-            return pd.notna(vals)
-        # Find rows where error contains non-nan values
-        candidates = group[group.apply(error_has_non_nan, axis=1)]
-        
-        if len(candidates) > 0:
-            # From those candidates, select row with the lowest average value in the 'error' list
-            def avg_error(row):
-                vals = row['error']
-                if isinstance(vals, list) and len(vals) > 0:
-                    # Exclude NaN
-                    valid = [v for v in vals if pd.notna(v)]
-                    if len(valid) > 0:
-                        return np.nanmean(valid)
-                return np.inf
-            idx = candidates.apply(avg_error, axis=1).idxmin()
-            # Keep the row with lowest average error as is
-            best_row = group.loc[idx].copy()
-            # For all other rows, clear columns except for 'mz' and 'retention_time'
-            new_group = []
-            for i, row in group.iterrows():
-                if i == idx:
-                    #Keep the isotope info for the feature with the lowest average error
-                    new_group.append(row)
-                else:
-                    #Keep the non-isotope details for the other MS1 entries that are in the same cluster
-                    row_cleared = row.copy()
-                    for col in group.columns:
-                        if col in ["mz_y", "charge", "intensity_y", "multiple", "dx", "mz_iso",
-                                   "intensity_iso", "idx_iso", "error", "decay", "n"]:
-                            row_cleared[col] = np.nan
-                    new_group.append(row_cleared)
-            return pd.DataFrame(new_group)
-        else:
-            # If no candidate, fall back to returning the entire group
-            return group
-
-    print(len(res))
-
-    clustering = res
-    
-    print("deimos.alignment.agglomerative_clustering() completed")
-    del multipeaks_AllSamples, res
-
-    #The pd.pivot_table() function cannot consider multi-column conditions during aggregation
-    # --> for certain values where this is required, the relevant entries will be kept within each cluster group
-    if MS2DataPresent is True:
-        #For clusters with multiple MS2 entries, keep the MS2 entry with the highest intensity
-        clustering = clustering.groupby('cluster', group_keys=False).apply(select_MS2_info).reset_index()
-
-    if PerformIsotopeDetection is True:
-        #For clusters with multiple isotope entries, keep the isotope entry with the lowest (average) error score
-        # (average as one entry can have multiple isotopes assigned)
-        clustering = clustering.groupby('cluster', group_keys=False).apply(select_isotope_info).reset_index()
-
     # now dump it to disk!
-    clustering.to_csv('Results/clustering.csv', index=False)
-    print("clustering.to_csv() completed")
+    res.to_csv('Results_TenSamplesReference/res.csv', index=False)
+    print("res.to_csv() completed")
 
-    exit()
+    return res
 
-    #Depending on which steps/data were kept for the earlier processing stages, different columns 
-    # will be present in the data object. --> need to modulate which values are included in the pivot_table function
+    # def select_MS2_info(group):
+    #     # Check if any entry in 'index_ms2' is not nan (contains non-nan values)
+    #     # 'index_ms2' is a list; need to check for lists that contain at least one non-NaN value
+    #     def index_ms2_has_non_nan(row):
+    #         vals = row['index_ms2']
+    #         if isinstance(vals, list):
+    #             return any(pd.notna(v) for v in vals)
+    #         return pd.notna(vals)
+    #     # Find rows where index_ms2 contains non-nan values
+    #     candidates = group[group.apply(index_ms2_has_non_nan, axis=1)]
+        
+    #     if len(candidates) > 0:
+    #         # From those candidates, select row with the highest value in the 'intensity_ms2' list
+    #         def max_intensity_ms2(row):
+    #             vals = row['intensity_ms2']
+    #             if not isinstance(vals, list) or isinstance(vals, str):
+    #                 # If vals is a string (like str(list)), do not wrap in list
+    #                 try:
+    #                     # Try to interpret string as list (from csv import)
+    #                     import ast
+    #                     evaluated = ast.literal_eval(vals)
+    #                     if isinstance(evaluated, list):
+    #                         vals = evaluated
+    #                     else:
+    #                         vals = [evaluated]
+    #                 except Exception:
+    #                     vals = [vals]
+    #             if isinstance(vals, list) and len(vals) > 0:
+    #                 return max([v for v in vals if pd.notna(v)])
+    #             return -np.inf
+    #         idx = candidates.apply(max_intensity_ms2, axis=1).idxmax()
+    #         # Keep the row with highest intensity_ms2 as is
+    #         best_row = group.loc[idx].copy()
+    #         # For all other rows, clear columns except for 'mz' and 'retention_time'
+    #         new_group = []
+    #         for i, row in group.iterrows():
+    #             if i == idx:
+    #                 #Keep the MS2 info for the feature with the fragment with the highest intensity
+    #                 new_group.append(row)
+    #             else:
+    #                 #Keep the non-MS2 details for the other MS1 entries that are in the same cluster
+    #                 row_cleared = row.copy()
+    #                 for col in group.columns:
+    #                     if col in ["mz_ms1","drift_time_ms1","retention_time_ms1","intensity_ms1","persistence_ms1",
+    #                                "index_ms2","mz_ms2","drift_time_ms2","retention_time_ms2","intensity_ms2",
+    #                                "persistence_ms2","drift_time_raw_ms2","drift_time_error","drift_time_score"]:
+    #                         row_cleared[col] = np.nan
+    #                 new_group.append(row_cleared)
+    #         return pd.DataFrame(new_group)
+    #     else:
+    #         # If no candidate, fall back to returning the entire group
+    #         return group
+
+    # def select_isotope_info(group):
+    #     # Check if any entry in 'error' is not nan (contains non-nan values)
+    #     # 'error' is a list; need to check for lists that contain at least one non-NaN value
+    #     def error_has_non_nan(row):
+    #         vals = row['error']
+    #         if isinstance(vals, list):
+    #             return any(pd.notna(v) for v in vals)
+    #         return pd.notna(vals)
+    #     # Find rows where error contains non-nan values
+    #     candidates = group[group.apply(error_has_non_nan, axis=1)]
+        
+    #     if len(candidates) > 0:
+    #         # From those candidates, select row with the lowest average value in the 'error' list
+    #         def avg_error(row):
+    #             vals = row['error']
+    #             if isinstance(vals, list) and len(vals) > 0:
+    #                 # Exclude NaN
+    #                 valid = [v for v in vals if pd.notna(v)]
+    #                 if len(valid) > 0:
+    #                     return np.nanmean(valid)
+    #             return np.inf
+    #         idx = candidates.apply(avg_error, axis=1).idxmin()
+    #         # Keep the row with lowest average error as is
+    #         best_row = group.loc[idx].copy()
+    #         # For all other rows, clear columns except for 'mz' and 'retention_time'
+    #         new_group = []
+    #         for i, row in group.iterrows():
+    #             if i == idx:
+    #                 #Keep the isotope info for the feature with the lowest average error
+    #                 new_group.append(row)
+    #             else:
+    #                 #Keep the non-isotope details for the other MS1 entries that are in the same cluster
+    #                 row_cleared = row.copy()
+    #                 for col in group.columns:
+    #                     if col in ["mz_y", "charge", "intensity_y", "multiple", "dx", "mz_iso",
+    #                                "intensity_iso", "idx_iso", "error", "decay", "n"]:
+    #                         row_cleared[col] = np.nan
+    #                 new_group.append(row_cleared)
+    #         return pd.DataFrame(new_group)
+    #     else:
+    #         # If no candidate, fall back to returning the entire group
+    #         return group
+
+    # def select_peakshape_info(group):
+    #     # Check if any entry in 'Peak_Shape' is not nan (contains non-nan values)
+    #     # 'Peak_Shape' is a list; need to check for lists that contain at least one non-NaN value
+    #     def peakshape_has_non_nan(row):
+    #         vals = row['Peak_Shape']
+    #         if isinstance(vals, list):
+    #             return any(pd.notna(v) for v in vals)
+    #         return pd.notna(vals)
+    #     # Find rows where Peak_Shape contains non-nan values
+    #     candidates = group[group.apply(peakshape_has_non_nan, axis=1)]
+        
+    #     if len(candidates) > 0:
+    #         # From those candidates, select row with the most values in Peak_Shape
+    #         def peakshape_list_length(row):
+    #             vals = row['Peak_Shape']
+    #             if isinstance(vals, list):
+    #                 # Only count non-nan elements
+    #                 return sum(pd.notna(v) for v in vals)
+    #             elif pd.notna(vals):
+    #                 return 1
+    #             return 0
+    #         idx = candidates.apply(peakshape_list_length, axis=1).idxmax()
+    #         # Keep the row with the most Peak_Shape values as is
+    #         best_row = group.loc[idx].copy()
+    #         # For all other rows, clear Peak_Shape column
+    #         new_group = []
+    #         for i, row in group.iterrows():
+    #             if i == idx:
+    #                 # Keep Peak_Shape info for the best feature
+    #                 new_group.append(row)
+    #             else:
+    #                 # Remove Peak_Shape info for others in cluster
+    #                 row_cleared = row.copy()
+    #                 row_cleared['Peak_Shape'] = np.nan
+    #                 new_group.append(row_cleared)
+    #         return pd.DataFrame(new_group)
+    #     else:
+    #         # If no candidate, fall back to returning the entire group
+    #         return group
+
+    # print(len(res))
+
+    # clustering = res
     
-    #Create values_list and aggfunc_commands with the details to keep that are always present
-    values_list = ["index_ms1","mz","drift_time","retention_time","intensity"]
-    aggfunc_commands = {
-        "index_ms1":list,
-        "mz":'mean',
-        "drift_time":'mean',
-        "retention_time":'mean',
-        "intensity":'mean'
-    }
-    if MS2DataPresent is True:
-        values_list.append(["index_ms2","mz_ms2","drift_time_ms2","retention_time_ms2","intensity_ms2",
-                            "drift_time_raw_ms2","drift_time_error","drift_time_score"])
-        aggfunc_commands.append({
-            "index_ms2",
-            "mz_ms2",
-            "drift_time_ms2",
-            "retention_time_ms2",
-            "intensity_ms2",
-            "drift_time_raw_ms2",
-            "drift_time_error",
-            "drift_time_score"
-        })
-    if PerformIsotopeDetection is True:
-        values_list.append(["mz_y","charge","intensity_y","multiple","dx","mz_iso","intensity_iso",
-                            "idx_iso","error","decay","n"])
-        aggfunc_commands.append({
-            "mz_y",
-            "charge",
-            "intensity_y",
-            "multiple",
-            "dx",
-            "mz_iso",
-            "intensity_iso",
-            "idx_iso",
-            "error",
-            "decay",
-            "n"
-        })
-    if PerformPeakShapeCorrelation is True:
-        values_list.append(["Peak_Shape"])
-        aggfunc_commands.append({
-            "Peak_Shape"
-        })
+    # print("deimos.alignment.agglomerative_clustering() completed")
+    # del multipeaks_AllSamples, res
 
-    # pivot the table to get it into the right format for ipaPy2
-    # table headers: id(cluster), average mz, average rts, sample_intensities NOTE: no average drift time or ccs currently!
-    full_pivot = pd.pivot_table(clustering, 
-                                values = ['intensity', 'mz', 'retention_time', 
-                                          'drift_time'], 
-                                index = 'cluster', columns = 'sample_id') #columns changed from 'sample_idx'
+    # #The pd.pivot_table() function cannot consider multi-column conditions during aggregation
+    # # --> for certain values where this is required, the relevant entries will be kept within each cluster group
+    # if MS2DataPresent is True:
+    #     #For clusters with multiple MS2 entries, keep the MS2 entry with the highest intensity
+    #     clustering = clustering.groupby('cluster', group_keys=False).apply(select_MS2_info).reset_index()
+
+    # if PerformIsotopeDetection is True:
+    #     #For clusters with multiple isotope entries, keep the isotope entry with the lowest (average) error score
+    #     # (average as one entry can have multiple isotopes assigned)
+    #     clustering = clustering.groupby('cluster', group_keys=False).apply(select_isotope_info).reset_index()
+
+    # if PerformPeakShapeCorrelation is True:
+    #     #For clusters with multiple different peak shapes, keep the peak shape info with the most datapoints
+    #     clustering = clustering.groupby('cluster', group_keys=False).apply(select_peakshape_info).reset_index()
+
+    # # now dump it to disk!
+    # clustering.to_csv('Results/clustering.csv', index=False)
+    # print("clustering.to_csv() completed")
+
+    # #Depending on which steps/data were kept for the earlier processing stages, different columns 
+    # # will be present in the data object. --> need to modulate which values are included in the pivot_table function
+    
+    # #Create values_list and aggfunc_commands with the details to keep that are always present
+    # values_list = ["index_ms1","mz","drift_time","retention_time","intensity"]
+    # aggfunc_commands = {
+    #     "index_ms1":list,
+    #     "mz":'mean',
+    #     "drift_time":'mean',
+    #     "retention_time":'mean',
+    #     "intensity":'mean'
+    # }
+    # if MS2DataPresent is True:
+    #     values_list.append(["index_ms2","mz_ms2","drift_time_ms2","retention_time_ms2","intensity_ms2",
+    #                         "drift_time_raw_ms2","drift_time_error","drift_time_score"])
+    #     aggfunc_commands.append({
+    #         "index_ms2",
+    #         "mz_ms2",
+    #         "drift_time_ms2",
+    #         "retention_time_ms2",
+    #         "intensity_ms2",
+    #         "drift_time_raw_ms2",
+    #         "drift_time_error",
+    #         "drift_time_score"
+    #     })
+    # if PerformIsotopeDetection is True:
+    #     values_list.append(["mz_y","charge","intensity_y","multiple","dx","mz_iso","intensity_iso",
+    #                         "idx_iso","error","decay","n"])
+    #     aggfunc_commands.append({
+    #         "mz_y",
+    #         "charge",
+    #         "intensity_y",
+    #         "multiple",
+    #         "dx",
+    #         "mz_iso",
+    #         "intensity_iso",
+    #         "idx_iso",
+    #         "error",
+    #         "decay",
+    #         "n"
+    #     })
+    # if PerformPeakShapeCorrelation is True:
+    #     values_list.append(["Peak_Shape"])
+    #     aggfunc_commands.append({
+    #         "Peak_Shape"
+    #     })
+
+    # # pivot the table to get it into the right format for ipaPy2
+    # # table headers: id(cluster), average mz, average rts, sample_intensities NOTE: no average drift time or ccs currently!
+    # full_pivot = pd.pivot_table(clustering, 
+    #                             values = ['intensity', 'mz', 'retention_time', 
+    #                                       'drift_time'], 
+    #                             index = 'cluster', columns = 'sample_id') #columns changed from 'sample_idx'
        
-    full_pivot.to_csv('Results/full_pivot.csv', index=False)
-    print("full_pivot = pd.pivot_table() completed")
-    del clustering
+    # full_pivot.to_csv('Results/full_pivot.csv', index=False)
+    # print("full_pivot = pd.pivot_table() completed")
+    # del clustering
 
-    exit()
+    # #how to get rid of a column in a multilevel table
+    # #full_pivot = full_pivot.drop([('mz', 'mzs')], axis=1)
+    # #ok - calculate the per row means for all of the mzs
+    # mzs = full_pivot[('mz',)].mean(axis=1)#type: ignore
+    # print(full_pivot[('mz',)])
+    # print("mzs = full_pivot completed")
+    # print(mzs)
+    # #full_pivot[('mz','mzs')] = mzs
+    # #now drop the individual sample means
+    # mz_stripped = full_pivot.drop([('mz',)], axis = 1)
+    # #add to the multiindex
+    # mz_stripped[('mz', 'mzs')] = mzs
+    # del [full_pivot, mzs]#type: ignore
 
-    #how to get rid of a column in a multilevel table
-    #full_pivot = full_pivot.drop([('mz', 'mzs')], axis=1)
-    #ok - calculate the per row means for all of the mzs
-    mzs = full_pivot[('mz',)].mean(axis=1)#type: ignore
-    print(full_pivot[('mz',)])
-    print("mzs = full_pivot completed")
-    print(mzs)
-    #full_pivot[('mz','mzs')] = mzs
-    #now drop the individual sample means
-    mz_stripped = full_pivot.drop([('mz',)], axis = 1)
-    #add to the multiindex
-    mz_stripped[('mz', 'mzs')] = mzs
-    del [full_pivot, mzs]#type: ignore
+    # #now do the same for the retention times
+    # # mz_stripped.to_csv('Results/mz_stripped.csv', index=False)
+    # rts = mz_stripped[('retention_time',)].mean(axis=1)#type: ignore
+    # rts_stripped = mz_stripped.drop([('retention_time',)], axis = 1)
+    # rts_stripped[('retention_time', 'RTs')] = rts
+    # del [mz_stripped, rts]#type: ignore
 
-    #now do the same for the retention times
-    # mz_stripped.to_csv('Results/mz_stripped.csv', index=False)
-    rts = mz_stripped[('retention_time',)].mean(axis=1)#type: ignore
-    rts_stripped = mz_stripped.drop([('retention_time',)], axis = 1)
-    rts_stripped[('retention_time', 'RTs')] = rts
-    del [mz_stripped, rts]#type: ignore
-
-    #now we do the same for the drift times 
-    drifts = rts_stripped[('drift_time',)].mean(axis=1)#type: ignore
-    drifts_stripped = rts_stripped.drop([('drift_time',)], axis = 1)
-    #currently commented out as unused, also shouldn't this be CCS values?
-    #Update from Jess: Yes! I have put this back in so that the CCS values can be calculated
-    drifts_stripped[('drift_time', 'drifts')] = drifts
-    del [rts_stripped, drifts]#type: ignore
-    # drifts_stripped.to_csv('Results/drifts_stripped.csv', index=False)
-    print("dataset stripping steps completed")
+    # #now we do the same for the drift times 
+    # drifts = rts_stripped[('drift_time',)].mean(axis=1)#type: ignore
+    # drifts_stripped = rts_stripped.drop([('drift_time',)], axis = 1)
+    # #currently commented out as unused, also shouldn't this be CCS values?
+    # #Update from Jess: Yes! I have put this back in so that the CCS values can be calculated
+    # drifts_stripped[('drift_time', 'drifts')] = drifts
+    # del [rts_stripped, drifts]#type: ignore
+    # # drifts_stripped.to_csv('Results/drifts_stripped.csv', index=False)
+    # print("dataset stripping steps completed")
     
-    #flatten multiindex
-    drifts_stripped.columns = drifts_stripped.columns.get_level_values(1)
-    #rename the index (cluster) to ids
-    #is it ok to just have a list of ids as the index or do we need an additional index column?
-    # drifts_stripped = drifts_stripped.index.name ='ids' #Commented out by Jess (29/01/2025)
-    # if not, add a specific set of indexes as a different column
-    drifts_stripped['ids'] = range(1, len(drifts_stripped) + 1)
+    # #flatten multiindex
+    # drifts_stripped.columns = drifts_stripped.columns.get_level_values(1)
+    # #rename the index (cluster) to ids
+    # #is it ok to just have a list of ids as the index or do we need an additional index column?
+    # # drifts_stripped = drifts_stripped.index.name ='ids' #Commented out by Jess (29/01/2025)
+    # # if not, add a specific set of indexes as a different column
+    # drifts_stripped['ids'] = range(1, len(drifts_stripped) + 1)
 
-    return drifts_stripped
+    # return drifts_stripped
 
 def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol):
     tune_pos = deimos.load(rf'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
@@ -913,13 +968,13 @@ def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, cc
     return ccs_cal_pos
 
 # def CCSCalibrationSteps(ccs_cal_pos):
-def CCSCalibration(ccs_cal_pos, drifts_stripped):
+def CCSCalibration(ccs_cal_pos, feature_table):
     
-    drifts_stripped['CCS'] = ccs_cal_pos.arrival2ccs(mz=drifts_stripped['mzs'], 
-                                                ta=drifts_stripped['drifts'], 
+    feature_table['CCS'] = ccs_cal_pos.arrival2ccs(mz=feature_table['mzs'], 
+                                                ta=feature_table['drifts'], 
                                                 q=1)
     
-    drifts_stripped.to_csv('Results/drifts_stripped_final.csv', index=False)
+    feature_table.to_csv('Results/drifts_stripped_final.csv', index=False)
     print("CCS Calibration steps completed")
 
-    return drifts_stripped
+    return feature_table
