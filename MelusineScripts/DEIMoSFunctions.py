@@ -613,7 +613,7 @@ def ConcatenateNewPeakData(loopcount, res_final, file_NoExt):
     res_final.insert(0, 'sample_id', file_NoExt)
     loopcount=loopcount+1
 
-    res_final.to_csv('Results/{}/AgglomerativeClustering/res_final.csv'.format(file_NoExt), index=False)
+    res_final.to_csv('Results/{}/res_final.csv'.format(file_NoExt), index=False)
     
     #Append data to existing csv file (prevent system crashing)
     #Check if the file already exists

@@ -429,11 +429,6 @@ if __name__ == "__main__":
 
             print("Peak Shape Data Collected")
 
-            #Make a folder for this sample for all Agglomerative Clustering results to go in to
-            if os.path.exists('Results/{}/AgglomerativeClustering'.format(file_NoExt)):
-                shutil.rmtree('Results/{}/AgglomerativeClustering'.format(file_NoExt))
-            os.mkdir('Results/{}/AgglomerativeClustering'.format(file_NoExt))
-
             del sample_data
             
             loopcount = DEIMoSFunctions.ConcatenateNewPeakData(loopcount, res_final, 
