@@ -20,6 +20,11 @@ import warnings
 import DEIMoSFunctions
 import CustomFunctions
 
+import deimos
+#Custom Errors
+class CustomError(Exception):
+    pass
+
 # Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -28,7 +33,7 @@ print("Script loop")
 
 ##Set thresholds for different processes
 #Working directory (where the raw files are)
-working_directory = r"F:\JessicaOLoughlin\RawDataAgilentFiles"
+working_directory = rf"F:\JessicaOLoughlin\RawDataMZMLFiles"
 #Reading in files
 calib_files = ['POS_Precondition2.h5', 'POS_Precondition3.h5', 'POS_Precondition4.h5', 
                'POS_Precondition5.h5', 'POS_CCS0.h5', 'POS_CCS1.h5', 'POS_CCS2.h5', 
@@ -144,6 +149,9 @@ MergeMS2_mz_ppm = 3 #ppm
 MergeMS2_RT_tol = 0.5 #Time in minutes
 MergeMS2_DT_tol = 2.0 #Percentage
 
+#Minimum Detection
+MinimumDetectionThreshold = 0.5 #0.5 = 50% - PLEASE give to 2 significant figures!
+
 def ReadFilesInDirectory():
 
     # path = r'f:\JessicaOLoughlin\RawDataMZMLFiles\*.h5'
@@ -175,16 +183,10 @@ def CreateResultsFile():
         shutil.rmtree('Results')
     os.makedirs('Results')
 
-import deimos
-import DEIMoSFunctions_RedundantStepsRemoved
-#Custom Errors
-class CustomError(Exception):
-    pass
-
 #Set whether the pipeline will undergo MS2 data processing or not
 MS2DataPresent = False
 #Set whether the pipeline will start from the raw data or already-collected data in the Results folder
-StartWithDataInResultsFolder = True
+StartWithAlreadyProcessedDataInResultsFolder = True #False = Process Raw Data Files, True = Re-perform data processing steps with data that has already been collected
 ##Peak Detection
 #Decide which method to use
 PeakDetectionMethod = "PersistentHomology" #Type PersistentHomology or MaximumFiltration
@@ -209,8 +211,13 @@ SaveMS2ExtractDataFiles = True
 SaveMS2ExtractGraphs = False
 ##Peak Shape Correlation
 PerformPeakShapeCorrelation = True
+
+#TODO: Gap Filling and Minimum Detection Thresholding needs to be adjusted to new data structure
+# I would not recommend that you use them at this time
 ##Gap Filling
-PerformGapFilling = True
+PerformGapFilling = False
+##Minimum Detection Thresholding
+PerformMinimumDetectionThresholding = False
 
 if __name__ == "__main__":
     
@@ -223,8 +230,8 @@ if __name__ == "__main__":
     print("===============================")
 
     print("-=-=-=-=-=-=-=-Parameters=-=-=-=-=-=-=-=-=")
-    print("StartWithDataInResultsFolder?", StartWithDataInResultsFolder)
-    if StartWithDataInResultsFolder is False:
+    print("StartWithAlreadyProcessedDataInResultsFolder?", StartWithAlreadyProcessedDataInResultsFolder)
+    if StartWithAlreadyProcessedDataInResultsFolder is False:
         print("========Peak Detection========")
         print("Peak Detection Method:", PeakDetectionMethod)
         print("MS1 threshold:", ms1_threshold)
@@ -243,14 +250,16 @@ if __name__ == "__main__":
         if MS2DataPresent is True:
             print("SaveMS2ExtractDataFiles is:", SaveMS2ExtractDataFiles)
             print("SaveMS2ExtractGraphs is:", SaveMS2ExtractGraphs)
-        print("====Peak Shape Correlation====")  
+    print("====Peak Shape Correlation====")  
     print("PerformPeakShapeCorrelation?", PerformPeakShapeCorrelation) 
     print("==========Gap Filling=========") 
     print("PerformGapFilling?", PerformGapFilling)
+    print("===Minimum Detection Thresholding===") 
+    print("PerformMinimumDetectionThresholding?", PerformMinimumDetectionThresholding)
     print("-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=")
 
     #Set to read in directory where the data is stored
-    os.chdir(r"f:\JessicaOLoughlin\RawDataMZMLFiles")
+    os.chdir(working_directory)
 
     #Create multipeaks and loopcount objects for downstream agglomerative clustering steps
     # Create a loop counter for the agglomerative clustering steps
@@ -262,14 +271,14 @@ if __name__ == "__main__":
     files = ReadFilesInDirectory()
     print("ReadFilesInDirectory() complete")
 
-    if StartWithDataInResultsFolder is False: #Perform processing from raw data stage
+    if StartWithAlreadyProcessedDataInResultsFolder is False: #Perform processing from raw data stage
     
         CreateResultsFile()
         print("CreateResultsFile() complete")
 
         if PerformRTAlignment is True:
             #Note: The Peak Detection is also performed for the middle file at this point
-            middle, rtalign_data = DEIMoSFunctions_RedundantStepsRemoved.FindMiddleFileForRTAlignment(ms1_threshold, 
+            middle, rtalign_data = DEIMoSFunctions.FindMiddleFileForRTAlignment(ms1_threshold, 
                                                                                                     ms2_threshold,
                                                                                                     PeakDetectionMethod,
                                                                                                     PeakDet_smooth_data_radius, PeakDet_smooth_data_iterations,
@@ -336,7 +345,7 @@ if __name__ == "__main__":
                     print("Retention Time not performed as this is the reference file")
                 else:
                     print("Performing Retention Time alignment")
-                    sample_data = DEIMoSFunctions_RedundantStepsRemoved.RetentionTimeAlignment(file_NoExt, 
+                    sample_data = DEIMoSFunctions.RetentionTimeAlignment(file_NoExt, 
                                                                                             sample_data, 
                                                                                             rtalign_data, 
                                                                                             PeakDetectionMethod,
@@ -357,7 +366,7 @@ if __name__ == "__main__":
             if file_NoExt == middle:
                 pass
             else:
-                sample_data = DEIMoSFunctions_RedundantStepsRemoved.DetectPeaks(file_NoExt, sample_data, 
+                sample_data = DEIMoSFunctions.DetectPeaks(file_NoExt, sample_data, 
                                                                                 PeakDetectionMethod,
                                                                                 PeakDet_smooth_data_radius, PeakDet_smooth_data_iterations,
                                                                                 PeakDet_persistent_homology_radius, 
@@ -365,7 +374,7 @@ if __name__ == "__main__":
 
             if MS2DataPresent is True:
                 print("Performing MS2 Extraction")
-                res_final = DEIMoSFunctions_RedundantStepsRemoved.ExtractMS2Spectra(sample_data, file_NoExt, MS2Extract_intensity_thres, MS2Extract_ms1_mz_subset_low, MS2Extract_ms1_dt_subset_low, 
+                res_final = DEIMoSFunctions.ExtractMS2Spectra(sample_data, file_NoExt, MS2Extract_intensity_thres, MS2Extract_ms1_mz_subset_low, MS2Extract_ms1_dt_subset_low, 
                     MS2Extract_ms1_rt_subset_low, MS2Extract_ms1_mz_subset_high, MS2Extract_ms1_dt_subset_high, 
                     MS2Extract_ms1_rt_subset_high, MS2Extract_ms2_dt_subset_low, MS2Extract_ms2_rt_subset_low, 
                     MS2Extract_ms2_dt_subset_high, MS2Extract_ms2_rt_subset_high, MS2Extract_model_ce, MS2Extract_model_params, 
@@ -394,7 +403,7 @@ if __name__ == "__main__":
 
             if PerformIsotopeDetection is True:
                 print("Performing Isotope Detection")
-                sample_data, res_final = DEIMoSFunctions_RedundantStepsRemoved.DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
+                sample_data, res_final = DEIMoSFunctions.DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size, isotope_partition_overlap, isotope_map_mz_dt_rt_tol, 
                                             isotope_map_delta, isotope_map_max_isotopes, isotope_map_max_charges, isotope_map_max_error, file_NoExt, 
                                             isotope_min_no_isotopes, isotope_slice_mz_low, isotope_slice_mz_high, isotope_plot_slice_mz_low, 
                                             isotope_plot_slice_dt_low, isotope_plot_slice_rt_low, isotope_plot_slice_mz_high, isotope_plot_slice_dt_high, 
@@ -416,7 +425,7 @@ if __name__ == "__main__":
             # --> collect Peak Shape information 
 
             print("Collecting Peak Shape Data")
-            sample_data, res_final = CustomFunctions.InspectRawDataAroundMS1Peaks(sample_data, res_final)
+            sample_data, res_final = CustomFunctions.CollectMS1PeakShapeData(sample_data, res_final)
 
             print("Peak Shape Data Collected")
 
@@ -427,15 +436,16 @@ if __name__ == "__main__":
 
             del sample_data
             
-            loopcount = DEIMoSFunctions_RedundantStepsRemoved.ConcatenateNewPeakData(loopcount, res_final, 
-                                                                                     agglo_mergeFeatures_mz_dt_rt_tol, 
-                                                                                     file_NoExt)
+            loopcount = DEIMoSFunctions.ConcatenateNewPeakData(loopcount, res_final, 
+                                                               file_NoExt)
             del res_final
-            print("AgglomerativeClusteringConcatenateNewPeakData() complete")
+            print("ConcatenateNewPeakData() complete")
 
         del rtalign_data, middle
 
-    feature_table = pd.read_csv('Results_TestPeakShapeCorrelations/res_final_AllSamples.csv')
+    feature_table = pd.read_csv('Results/res_final_AllSamples.csv')
+    #TODO: read feature_table with code in the line above after testing
+    # feature_table = pd.read_csv('Results_TestPeakShapeCorrelation/res_final_AllSamples.csv')
     feature_table = feature_table.apply(pd.to_numeric, errors = "ignore")
 
     print(feature_table)
@@ -444,33 +454,33 @@ if __name__ == "__main__":
         print("Performing Peak Shape Correlation")
         feature_table = CustomFunctions.PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, 
                                                              PeakShapeCorr_CorrThres)
-        print("Peak Shape Correaltion complete")
+        print("Peak Shape Correlation complete")
     elif PerformPeakShapeCorrelation is False:
         print("Peak Shape Correlation not performed")
     else:
         raise CustomError("""Set PerformPeakShapeCorrelation as True or False to indicate whether you want to include this step.""")
 
-    exit()
+    #TODO: Gap Filling needs to be adjusted to new data structure
+    # Use at your own peril
+    if PerformGapFilling is True:
+        feature_table = CustomFunctions.GapFillingSteps(feature_table, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_tol, 
+                        GapFill_trapz_dx, files)
+        print("GapFillingSteps() complete")
 
-    feature_table = CustomFunctions.GapFillingSteps(feature_table, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_tol, 
-                    GapFill_trapz_dx, files)
-    print("GapFillingSteps() complete")
-
-    ccs_cal_pos = DEIMoSFunctions_RedundantStepsRemoved.CreateCCSCalObjects(tune_pos_file, 
+    ccs_cal_pos = DEIMoSFunctions.CreateCCSCalObjects(tune_pos_file, 
                                                     ccsCalib_mz, ccsCalib_ccs, 
                                                     ccsCalib_q, ccsCalib_buffer_mass, 
                                                     ccsCalib_mz_tol, ccsCalib_dt_tol)
     print("CreateCCSCalObjects() complete")
     del tune_pos_file
     
-    feature_table = DEIMoSFunctions_RedundantStepsRemoved.CCSCalibration(ccs_cal_pos, feature_table)
+    feature_table = DEIMoSFunctions.CCSCalibration(ccs_cal_pos, feature_table)
     print("CCSCalibration() complete")
 
-    PerformMinimumDetectionThresholding = 0.5 #0.5 = 50% - PLEASE give to 2 significant figures!
 
     if PerformMinimumDetectionThresholding is True:
         print("Performing Minimum Detection thresholding")
-        CustomFunctions.MinimumDetectionThresholdSteps(PeakMerged_dataframe, minimum_detection_group_threshold)
+        CustomFunctions.MinimumDetectionThresholdSteps(feature_table, MinimumDetectionThreshold)
         print("MinimumDetectionThresholdSteps() complete")
     elif PerformMinimumDetectionThresholding is False:
         print("Minimum Detection Thresholding not performed")
@@ -480,8 +490,9 @@ if __name__ == "__main__":
     #Perform once all samples data is collected and all steps where raw data may be inspected are complete
     # (The averaging of clustered features that takes place here interferes with searching for that same feature in the raw data)  
     print("Performing Agglomerative Clustering and pivoting table") 
-    feature_table = DEIMoSFunctions_RedundantStepsRemoved.AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol, 
-                                                                                MS2DataPresent, PerformIsotopeDetection, PerformPeakShapeCorrelation)
+    feature_table = DEIMoSFunctions.AgglomerativeClusteringAndPivotTable(feature_table, agglo_multiSampPart_size, 
+                                                                         agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol, 
+                                                                         MS2DataPresent, PerformIsotopeDetection, PerformPeakShapeCorrelation)
     print("AgglomerativeClusteringAndPivotTable() complete")
 
     print("===============================")

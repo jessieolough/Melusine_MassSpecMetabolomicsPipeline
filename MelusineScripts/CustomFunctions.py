@@ -21,10 +21,12 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
-def InspectRawDataAroundMS1Peaks(sample_data, res_final):
+def CollectMS1PeakShapeData(sample_data, res_final):
 
     #Add new column to contain the Peak Shape information
-    res_final['Peak_Shape'] = [None]*len(res_final)      
+    res_final['Peak_Shape'] = [None]*len(res_final) 
+    res_final['PeakShape_retention_time'] = [None]*len(res_final)  
+    res_final['PeakShape_intensity'] = [None]*len(res_final)  
 
     #Loop through each peak and collect peak shape information
     for index, row in sample_data['ms1_peaks'].iterrows():
@@ -116,73 +118,39 @@ def InspectRawDataAroundMS1Peaks(sample_data, res_final):
         ms1raw_subset = ms1raw_subset.reset_index()
 
         #Round all values in the subset raw data --> improve downstream RT matching
-        ms1raw_subset = ms1raw_subset.round(3)     
-        
-        #Convert relevent information for Peak Shape into numpy array
-        ms1raw_subset = ms1raw_subset[['retention_time', 'intensity']]
-        ms1raw_subset = ms1raw_subset.to_numpy()
+        ms1raw_subset = ms1raw_subset.astype('float64').round(3)
 
         #Add the peak shape information into the row in res_final corresponding to this MS1 peak
-        res_final.at[index, 'Peak_Shape'] = ms1raw_subset
+        res_final.at[index,'PeakShape_retention_time'] = str(list(ms1raw_subset['retention_time']))
+        res_final.at[index,'PeakShape_intensity'] = str(list(ms1raw_subset['intensity']))
+        # res_final.loc[index, 'PeakShape_retention_time'] = list(ms1raw_subset['retention_time'])
+        # res_final.loc[index, 'PeakShape_intensity'] = list(ms1raw_subset['intensity'])
 
     return sample_data, res_final
 
 def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShapeCorr_CorrThres):
 
     #Correlate Peak Shapes
-    # =============================================================================
-    print(feature_table.columns)
-    #Keep only the peak shape information
-    # PeakShape_df = feature_table[['Peak_Shape']]
-
-    # print(PeakShape_df[['LongestPeakShape']])
-    # print(type(PeakShape_df[['LongestPeakShape']]))
-
-    #Correlate the selected Peak Shapes for each feature
-    # correlation_matrix = PeakShape_df['LongestPeakShape'].corr()
-    # correlation_matrix = np.corrcoef(PeakShape_df['LongestPeakShape'])
-    #Get RT information (first element of the array)
-    # PeakShape_list = PeakShape_df['Peak_Shape'].tolist()
 
     #TODO: for development, only keep specific number
     # PeakShape_df = PeakShape_df[0:10]
     # print(PeakShape_df)
 
-    RT_ShapeInfo = []
-    Ints_ShapeInfo = []
-
     import ast
 
-    def parse_string_array(s):
-        # Remove space at brackets
-        s = s.replace('[ ', '[').replace(' ]', ']')
-        # Add commas between numbers
-        lines = [line.replace(' ', ',') for line in s.strip().split('\n')]
-        s_fixed = '\n'.join(lines)
-        # Convert to list of lists, then to numpy array
-        try:
-            arr = np.array(ast.literal_eval(s_fixed))
-            return arr
-        except Exception as e:
-            print("Error parsing:", s)
-            return np.array([])  # or np.nan
-
-    feature_table['peak_array'] = feature_table['Peak_Shape'].apply(parse_string_array)
-
-    feature_table['PeakShape_retention_time'] = feature_table['peak_array'].apply(lambda arr: arr[:, 0].tolist() if arr.size else [])
-    feature_table['PeakShape_intensity'] = feature_table['peak_array'].apply(lambda arr: arr[:, 1].tolist() if arr.size else [])
-
-    feature_table.to_csv('Results_TestPeakShapeCorrelations/PeakShape_df.csv', index=False)
+    # Convert string representations of lists to actual lists
+    feature_table['PeakShape_retention_time'] = feature_table['PeakShape_retention_time'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+    feature_table['PeakShape_intensity'] = feature_table['PeakShape_intensity'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
 
     #For each feature: separate the peak shapes array so that RTs and Ints are in separate lists
     # to allow the the Ints to be correlated against each other
+    RT_ShapeInfo = []
+    Ints_ShapeInfo = []
     for index, row in feature_table.iterrows():
         RT_ShapeInfo.append(row['PeakShape_retention_time'])
         Ints_ShapeInfo.append(row['PeakShape_intensity'])
 
     #Find features with shared RT values to perform correlation analysis against
-    print(len(RT_ShapeInfo))
-
     '''
     To efficiently correlate each feature, go through each RT_group but SKIP each RT_group as you go along
     e.g. compare a, b, c, d
@@ -201,10 +169,8 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
     for RT_position_1 in range(0,len(RT_ShapeInfo),1):
         
         for RT_position_2 in range(RT_position_1+1, len(RT_ShapeInfo), 1):
-            # print(RT_position_1, RT_position_2)
             #Check if either set of features have intensities recorded at the same RTs
             shared_items = list(set(RT_ShapeInfo[RT_position_1]).intersection(RT_ShapeInfo[RT_position_2]))
-            # print(shared_items)
             #Only do correlation analysis if there are a minimum of 3 shared datapoints
             if len(shared_items) >= CorrelationMinimumNoDatapoints:
                 # print("Perform Correlation Analysis")
@@ -226,8 +192,6 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
                 intensities_2 = Ints_ShapeInfo[RT_position_2]
                 intensities_1 = [intensities_1[i] for i in RT_position_ind_1]
                 intensities_2 = [intensities_2[i] for i in RT_position_ind_2]
-                # print(intensities_1)
-                # print(intensities_2)
                 
                 #Perform peak shape correlation
                 correlation = np.corrcoef(intensities_1, intensities_2)
@@ -240,69 +204,13 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
                 correlation_list.append(correlation)
                 
             else:
-                # print("No Correlation Analysis Performed")
                 pass
-        # print("------------")
         
     correlations_df = pd.DataFrame({"RT_position_1":RT_position_1_list, 
                                     "RT_position_2":RT_position_2_list, 
                                     "Correlations":correlation_list})
         
     correlations_df.to_csv("correlations_df.csv")
-
-    from collections import defaultdict
-
-    def find_groups_with_coeff_df(df, threshold):
-        """
-        Groups items together if their correlation coefficient (from a dataframe)
-        is above the threshold.
-
-        Args:
-            df (pd.DataFrame): DataFrame with columns ['RT_position_1', 'RT_position_2', 'Correlations']
-            threshold (float): Minimum correlation coefficient to consider for grouping
-
-        Returns:
-            list of sets: Each set contains items in the same group
-        """
-        adj = defaultdict(set)
-        # Iterate over DataFrame rows
-        for _, row in df.iterrows():
-            item1 = row['RT_position_1']
-            item2 = row['RT_position_2']
-            coeff = row['Correlations']
-            if coeff >= threshold:
-                adj[item1].add(item2)
-                adj[item2].add(item1)
-        visited = set()
-        groups = []
-
-        def dfs(node, group):
-            visited.add(node)
-            group.add(node)
-            for neighbor in adj[node]:
-                if neighbor not in visited:
-                    dfs(neighbor, group)
-
-        for node in adj:
-            if node not in visited:
-                group = set()
-                dfs(node, group)
-                groups.append(group)
-
-        return groups
-
-    groups = find_groups_with_coeff_df(correlations_df[['RT_position_1', 'RT_position_2', 'Correlations']], 
-                                       PeakShapeCorr_CorrThres)
-    # Assign PeakShapeCorrGroups: for each index, find which group it belongs to and set group index as value
-    group_map = {}
-    for i, group in enumerate(groups):
-        for idx in group:
-            group_map[idx] = i
-    feature_table['PeakShapeCorrGroups'] = feature_table.index.map(lambda x: group_map.get(x, np.nan))
-
-    print(feature_table)
-    feature_table.to_csv("PeakShape_df.csv")
-    print(groups)
 
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
@@ -333,14 +241,12 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
     labels = fcluster(Z, t=dthresh, criterion='distance')
 
     feature_table['Agglo_Group'] = labels
-    correlations_df['Agglo_Group_1'] = correlations_df['RT_position_1'].map(lambda x: labels[int(x)])
-    correlations_df['Agglo_Group_2'] = correlations_df['RT_position_2'].map(lambda x: labels[int(x)])
+    correlations_df['Agglo_Group_1'] = correlations_df['RT_position_1'].map(lambda x: labels[int(x)]) #type: ignore
+    correlations_df['Agglo_Group_2'] = correlations_df['RT_position_2'].map(lambda x: labels[int(x)]) #type: ignore
 
     print(feature_table[['Agglo_Group']])
     print(correlations_df[['RT_position_1','RT_position_2','Correlations','Agglo_Group_1','Agglo_Group_2']])
     feature_table.to_csv("PeakShape_df_with_agglomerative.csv", index=False)
-    
-    print(groups)
 
     return feature_table
 
@@ -349,7 +255,7 @@ def GapFillingSteps(feature_table, GapFill_mz_tol, GapFill_rt_tol, GapFill_CCS_t
                     GapFill_trapz_dx, files):
     
     #TODO: Change back to the file read in the above line of code
-    res = pd.read_csv("Results_TenSamplesReference/res.csv")
+    res = feature_table
     res = res.apply(pd.to_numeric, errors = "ignore")
 
     #TODO: Temporary subsetting
@@ -838,7 +744,7 @@ def PeakMergingSteps(drifts_gapfilled, PeakMerge_mz_ppm, PeakMerge_RT_tol, PeakM
         
         #Add in relevant non-sample columns back into the dataframe
         sum_feature['ids'] = ""
-        sum_feature.at[0,'ids'] = list(feature['ids'].values)
+        sum_feature.at[0,'ids'] = list(feature['ids'].values) #type: ignore
         sum_feature['RTs'] = round(feature['RTs'].mean(), 3)
         sum_feature['drifts'] = round(feature['drifts'].mean(), 3)
         sum_feature['CCS'] = round(feature['CCS'].mean(), 2)

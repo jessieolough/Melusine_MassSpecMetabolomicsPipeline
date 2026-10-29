@@ -605,33 +605,17 @@ def DetectIsotopes(sample_data, isotope_intensity_thres, isotope_partition_size,
 
     return sample_data, res_final
         
-def ConcatenateNewPeakData(loopcount, res_final, agglo_mergeFeatures_mz_dt_rt_tol, 
-                                                  file_NoExt):
+def ConcatenateNewPeakData(loopcount, res_final, file_NoExt):
     # #With thanks to Karl Burgess for scripting the majority this section
-    
-    # # create an empty dataframe to store the clustered peaks
-    # multipeaks = pd.DataFrame()
-
-    # #Use res_final object with MS1 and MS2 data
-    # merged_peaks = deimos.alignment.merge_features(features = res_final,
-    #                                         dims=['mz', 'drift_time',
-    #                                             'retention_time'],
-    #                                         tol=agglo_mergeFeatures_mz_dt_rt_tol,
-    #                                         relative = [True, True, False])                                                        
-    # # next bit is sort of cheating. Fake up a multi-file dataframe by adding the filename and loopcounter as columns
-    # merged_peaks.insert(0, 'sample_idx', loopcount)#type: ignore
-    # merged_peaks.insert(0, 'sample_id', file_NoExt)#type: ignore
-    
-    # # main bit of work - concatenate the dataframe with the new peak data.
-    # multipeaks = pd.concat([multipeaks, merged_peaks])
     
     # Add sample_id and sample_idx columns to keep track of which features belong to which samples
     res_final.insert(0, 'sample_idx', loopcount)
     res_final.insert(0, 'sample_id', file_NoExt)
     loopcount=loopcount+1
+
+    res_final.to_csv('Results/{}/AgglomerativeClustering/res_final.csv'.format(file_NoExt), index=False)
     
     #Append data to existing csv file (prevent system crashing)
-    res_final.to_csv('Results/{}/AgglomerativeClustering/res_final.csv'.format(file_NoExt), index=False)
     #Check if the file already exists
     if os.path.isfile("Results/res_final_AllSamples.csv") == True: #True if present
         #Append to file
@@ -641,15 +625,37 @@ def ConcatenateNewPeakData(loopcount, res_final, agglo_mergeFeatures_mz_dt_rt_to
         res_final.to_csv('Results/res_final_AllSamples.csv', index=False)
         
     return loopcount
+
+def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol):
+    tune_pos = deimos.load(rf'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
+    print("Calibrating CCS values with tuning file")
+    ccs_cal_pos = deimos.calibration.tunemix(tune_pos,
+                                              mz=ccsCalib_mz,
+                                              ccs=ccsCalib_ccs,
+                                              q=ccsCalib_q,
+                                              buffer_mass=ccsCalib_buffer_mass, 
+                                              mz_tol=ccsCalib_mz_tol, 
+                                              dt_tol=ccsCalib_dt_tol)
+    print('r-squared:\t', ccs_cal_pos.fit['r'] ** 2) #type: ignore
     
+    return ccs_cal_pos
+
+def CCSCalibration(ccs_cal_pos, feature_table):
     
-def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol,
+    feature_table['CCS'] = ccs_cal_pos.arrival2ccs(mz=feature_table['mz'], 
+                                                ta=feature_table['drift_time'], 
+                                                q=1)
+    
+    feature_table.to_csv('Results/drifts_stripped_final.csv', index=False)
+
+    return feature_table
+    
+def AgglomerativeClusteringAndPivotTable(feature_table, agglo_multiSampPart_size, agglo_multiSampPart_tol, agglo_clustering_mz_dt_rt_tol,
                                          MS2DataPresent, PerformIsotopeDetection, PerformPeakShapeCorrelation):
     #With thanks to Karl Burgess for scripting the majority this section
     
-    # multipeaks_AllSamples = pd.read_csv("Results/multipeaks_AllSamples.csv")
     #TODO: Change back to the file read in the above line of code
-    multipeaks_AllSamples = pd.read_csv("Results_TenSamplesReference/multipeaks_AllSamples.csv")
+    multipeaks_AllSamples = feature_table
     
     #Code from Sean Colby
     # Partition the data
@@ -680,17 +686,67 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
     # res = res.drop(columns=["partition_idx", "sample_idx"])
     res = res.drop(columns=["partition_idx"])
 
-    #TODO: Change directories back to Results folder
-    res.to_csv('Results_TenSamplesReference/resWithClusters.csv', index=False)
+    res.to_csv('Results/res.csv', index=False)
 
-    print(len(res))
-    print("res['cluster'] value range:", res['cluster'].min(), "to", res['cluster'].max())
-
-    # now dump it to disk!
-    res.to_csv('Results_TenSamplesReference/res.csv', index=False)
-    print("res.to_csv() completed")
+    #TODO: Incorporate code (similar to what is commented out below) to merge clustered features together
+    # and get data in a format that can be used in the annotation pipeline
 
     return res
+
+    # # pivot the table to get it into the right format for ipaPy2
+    # # table headers: id(cluster), average mz, average rts, sample_intensities NOTE: no average drift time or ccs currently!
+    # full_pivot = pd.pivot_table(clustering, 
+    #                             values = ['intensity', 'mz', 'retention_time', 
+    #                                       'drift_time'], 
+    #                             index = 'cluster', columns = 'sample_id') #columns changed from 'sample_idx'
+       
+    # full_pivot.to_csv('Results/full_pivot.csv', index=False)
+    # print("full_pivot = pd.pivot_table() completed")
+    # del clustering
+
+    # #how to get rid of a column in a multilevel table
+    # #full_pivot = full_pivot.drop([('mz', 'mzs')], axis=1)
+    # #ok - calculate the per row means for all of the mzs
+    # mzs = full_pivot[('mz',)].mean(axis=1)#type: ignore
+    # print(full_pivot[('mz',)])
+    # print("mzs = full_pivot completed")
+    # print(mzs)
+    # #full_pivot[('mz','mzs')] = mzs
+    # #now drop the individual sample means
+    # mz_stripped = full_pivot.drop([('mz',)], axis = 1)
+    # #add to the multiindex
+    # mz_stripped[('mz', 'mzs')] = mzs
+    # del [full_pivot, mzs]#type: ignore
+
+    # #now do the same for the retention times
+    # # mz_stripped.to_csv('Results/mz_stripped.csv', index=False)
+    # rts = mz_stripped[('retention_time',)].mean(axis=1)#type: ignore
+    # rts_stripped = mz_stripped.drop([('retention_time',)], axis = 1)
+    # rts_stripped[('retention_time', 'RTs')] = rts
+    # del [mz_stripped, rts]#type: ignore
+
+    # #now we do the same for the drift times 
+    # drifts = rts_stripped[('drift_time',)].mean(axis=1)#type: ignore
+    # drifts_stripped = rts_stripped.drop([('drift_time',)], axis = 1)
+    # #currently commented out as unused, also shouldn't this be CCS values?
+    # #Update from Jess: Yes! I have put this back in so that the CCS values can be calculated
+    # drifts_stripped[('drift_time', 'drifts')] = drifts
+    # del [rts_stripped, drifts]#type: ignore
+    # # drifts_stripped.to_csv('Results/drifts_stripped.csv', index=False)
+    # print("dataset stripping steps completed")
+    
+    # #flatten multiindex
+    # drifts_stripped.columns = drifts_stripped.columns.get_level_values(1)
+    # #rename the index (cluster) to ids
+    # #is it ok to just have a list of ids as the index or do we need an additional index column?
+    # # drifts_stripped = drifts_stripped.index.name ='ids' #Commented out by Jess (29/01/2025)
+    # # if not, add a specific set of indexes as a different column
+    # drifts_stripped['ids'] = range(1, len(drifts_stripped) + 1)
+
+    # return drifts_stripped
+
+    #################################################################################
+    #Jessica's own developments
 
     # def select_MS2_info(group):
     #     # Check if any entry in 'index_ms2' is not nan (contains non-nan values)
@@ -901,80 +957,3 @@ def AgglomerativeClusteringAndPivotTable(agglo_multiSampPart_size, agglo_multiSa
     #         "Peak_Shape"
     #     })
 
-    # # pivot the table to get it into the right format for ipaPy2
-    # # table headers: id(cluster), average mz, average rts, sample_intensities NOTE: no average drift time or ccs currently!
-    # full_pivot = pd.pivot_table(clustering, 
-    #                             values = ['intensity', 'mz', 'retention_time', 
-    #                                       'drift_time'], 
-    #                             index = 'cluster', columns = 'sample_id') #columns changed from 'sample_idx'
-       
-    # full_pivot.to_csv('Results/full_pivot.csv', index=False)
-    # print("full_pivot = pd.pivot_table() completed")
-    # del clustering
-
-    # #how to get rid of a column in a multilevel table
-    # #full_pivot = full_pivot.drop([('mz', 'mzs')], axis=1)
-    # #ok - calculate the per row means for all of the mzs
-    # mzs = full_pivot[('mz',)].mean(axis=1)#type: ignore
-    # print(full_pivot[('mz',)])
-    # print("mzs = full_pivot completed")
-    # print(mzs)
-    # #full_pivot[('mz','mzs')] = mzs
-    # #now drop the individual sample means
-    # mz_stripped = full_pivot.drop([('mz',)], axis = 1)
-    # #add to the multiindex
-    # mz_stripped[('mz', 'mzs')] = mzs
-    # del [full_pivot, mzs]#type: ignore
-
-    # #now do the same for the retention times
-    # # mz_stripped.to_csv('Results/mz_stripped.csv', index=False)
-    # rts = mz_stripped[('retention_time',)].mean(axis=1)#type: ignore
-    # rts_stripped = mz_stripped.drop([('retention_time',)], axis = 1)
-    # rts_stripped[('retention_time', 'RTs')] = rts
-    # del [mz_stripped, rts]#type: ignore
-
-    # #now we do the same for the drift times 
-    # drifts = rts_stripped[('drift_time',)].mean(axis=1)#type: ignore
-    # drifts_stripped = rts_stripped.drop([('drift_time',)], axis = 1)
-    # #currently commented out as unused, also shouldn't this be CCS values?
-    # #Update from Jess: Yes! I have put this back in so that the CCS values can be calculated
-    # drifts_stripped[('drift_time', 'drifts')] = drifts
-    # del [rts_stripped, drifts]#type: ignore
-    # # drifts_stripped.to_csv('Results/drifts_stripped.csv', index=False)
-    # print("dataset stripping steps completed")
-    
-    # #flatten multiindex
-    # drifts_stripped.columns = drifts_stripped.columns.get_level_values(1)
-    # #rename the index (cluster) to ids
-    # #is it ok to just have a list of ids as the index or do we need an additional index column?
-    # # drifts_stripped = drifts_stripped.index.name ='ids' #Commented out by Jess (29/01/2025)
-    # # if not, add a specific set of indexes as a different column
-    # drifts_stripped['ids'] = range(1, len(drifts_stripped) + 1)
-
-    # return drifts_stripped
-
-def CreateCCSCalObjects(tune_pos_file, ccsCalib_mz, ccsCalib_ccs, ccsCalib_q, ccsCalib_buffer_mass, ccsCalib_mz_tol, ccsCalib_dt_tol):
-    tune_pos = deimos.load(rf'f:\JessicaOLoughlin\RawDataMZMLFiles\{tune_pos_file}', key='ms1')
-    print("Calibrating CCS values with tuning file")
-    ccs_cal_pos = deimos.calibration.tunemix(tune_pos,
-                                              mz=ccsCalib_mz,
-                                              ccs=ccsCalib_ccs,
-                                              q=ccsCalib_q,
-                                              buffer_mass=ccsCalib_buffer_mass, 
-                                              mz_tol=ccsCalib_mz_tol, 
-                                              dt_tol=ccsCalib_dt_tol)
-    print('r-squared:\t', ccs_cal_pos.fit['r'] ** 2) #type: ignore
-    
-    return ccs_cal_pos
-
-# def CCSCalibrationSteps(ccs_cal_pos):
-def CCSCalibration(ccs_cal_pos, feature_table):
-    
-    feature_table['CCS'] = ccs_cal_pos.arrival2ccs(mz=feature_table['mzs'], 
-                                                ta=feature_table['drifts'], 
-                                                q=1)
-    
-    feature_table.to_csv('Results/drifts_stripped_final.csv', index=False)
-    print("CCS Calibration steps completed")
-
-    return feature_table
