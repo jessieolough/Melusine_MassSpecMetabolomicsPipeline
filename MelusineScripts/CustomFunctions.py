@@ -131,8 +131,9 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
 
     #Correlate Peak Shapes
     # =============================================================================
+    print(feature_table.columns)
     #Keep only the peak shape information
-    PeakShape_df = feature_table[['Peak_Shape']]
+    # PeakShape_df = feature_table[['Peak_Shape']]
 
     # print(PeakShape_df[['LongestPeakShape']])
     # print(type(PeakShape_df[['LongestPeakShape']]))
@@ -144,8 +145,8 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
     # PeakShape_list = PeakShape_df['Peak_Shape'].tolist()
 
     #TODO: for development, only keep specific number
-    PeakShape_df = PeakShape_df[0:10]
-    print(PeakShape_df)
+    # PeakShape_df = PeakShape_df[0:10]
+    # print(PeakShape_df)
 
     RT_ShapeInfo = []
     Ints_ShapeInfo = []
@@ -166,18 +167,18 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
             print("Error parsing:", s)
             return np.array([])  # or np.nan
 
-    PeakShape_df['peak_array'] = PeakShape_df['Peak_Shape'].apply(parse_string_array)
+    feature_table['peak_array'] = feature_table['Peak_Shape'].apply(parse_string_array)
 
-    PeakShape_df['retention_time'] = PeakShape_df['peak_array'].apply(lambda arr: arr[:, 0].tolist() if arr.size else [])
-    PeakShape_df['intensity'] = PeakShape_df['peak_array'].apply(lambda arr: arr[:, 1].tolist() if arr.size else [])
+    feature_table['PeakShape_retention_time'] = feature_table['peak_array'].apply(lambda arr: arr[:, 0].tolist() if arr.size else [])
+    feature_table['PeakShape_intensity'] = feature_table['peak_array'].apply(lambda arr: arr[:, 1].tolist() if arr.size else [])
 
-    PeakShape_df.to_csv('Results_TestPeakShapeCorrelations/PeakShape_df.csv', index=False)
+    feature_table.to_csv('Results_TestPeakShapeCorrelations/PeakShape_df.csv', index=False)
 
     #For each feature: separate the peak shapes array so that RTs and Ints are in separate lists
     # to allow the the Ints to be correlated against each other
-    for index, row in PeakShape_df.iterrows():
-        RT_ShapeInfo.append(row['retention_time'])
-        Ints_ShapeInfo.append(row['intensity'])
+    for index, row in feature_table.iterrows():
+        RT_ShapeInfo.append(row['PeakShape_retention_time'])
+        Ints_ShapeInfo.append(row['PeakShape_intensity'])
 
     #Find features with shared RT values to perform correlation analysis against
     print(len(RT_ShapeInfo))
@@ -200,10 +201,13 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
     for RT_position_1 in range(0,len(RT_ShapeInfo),1):
         
         for RT_position_2 in range(RT_position_1+1, len(RT_ShapeInfo), 1):
+            # print(RT_position_1, RT_position_2)
             #Check if either set of features have intensities recorded at the same RTs
             shared_items = list(set(RT_ShapeInfo[RT_position_1]).intersection(RT_ShapeInfo[RT_position_2]))
+            # print(shared_items)
             #Only do correlation analysis if there are a minimum of 3 shared datapoints
             if len(shared_items) >= CorrelationMinimumNoDatapoints:
+                # print("Perform Correlation Analysis")
                 #Get position index of shared RT groups (to get respective Intensity values)
                 RT_position_ind_1 = {val: [i for i, x in enumerate(RT_ShapeInfo[RT_position_1]) if x == val] for val in shared_items}
                 RT_position_ind_2 = {val: [i for i, x in enumerate(RT_ShapeInfo[RT_position_2]) if x == val] for val in shared_items}
@@ -236,6 +240,7 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
                 correlation_list.append(correlation)
                 
             else:
+                # print("No Correlation Analysis Performed")
                 pass
         # print("------------")
         
@@ -286,19 +291,56 @@ def PeakShapeCorrelation(feature_table, CorrelationMinimumNoDatapoints, PeakShap
 
         return groups
 
-    threshold = 0.85
     groups = find_groups_with_coeff_df(correlations_df[['RT_position_1', 'RT_position_2', 'Correlations']], 
-                                       threshold)
-    print(groups)
-
+                                       PeakShapeCorr_CorrThres)
     # Assign PeakShapeCorrGroups: for each index, find which group it belongs to and set group index as value
     group_map = {}
     for i, group in enumerate(groups):
         for idx in group:
             group_map[idx] = i
-    PeakShape_df['PeakShapeCorrGroups'] = PeakShape_df.index.map(lambda x: group_map.get(x, np.nan))
+    feature_table['PeakShapeCorrGroups'] = feature_table.index.map(lambda x: group_map.get(x, np.nan))
 
-    print(PeakShape_df)
+    print(feature_table)
+    feature_table.to_csv("PeakShape_df.csv")
+    print(groups)
+
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    from scipy.spatial.distance import squareform
+    from scipy.cluster.hierarchy import linkage, fcluster
+
+    # Build a full correlation matrix (symmetric, missing off-diagonals set to 0)
+    num_feats = len(feature_table)
+    corrmat = np.zeros((num_feats, num_feats))
+    # Fill with available correlations (symmetrically)
+    for _, row in correlations_df.iterrows():
+        i = int(row['RT_position_1'])
+        j = int(row['RT_position_2'])
+        corrmat[i, j] = row['Correlations']
+        corrmat[j, i] = row['Correlations']
+    np.fill_diagonal(corrmat, 1)
+
+    # We need a distance matrix for agglomerative clustering: use 1-correlation
+    dists = 1 - corrmat
+    # To flatten for linkage, extract upper triangle
+    dists_flat = squareform(dists, checks=False)
+
+    # Agglomerative clustering
+    Z = linkage(dists_flat, method='average')
+    # Determine the number of clusters using the same threshold as previous, in "distance" units
+    # cluster at the same threshold as PeakShapeCorr_CorrThres: so distance = 1 - threshold
+    dthresh = 1 - PeakShapeCorr_CorrThres
+    labels = fcluster(Z, t=dthresh, criterion='distance')
+
+    feature_table['Agglo_Group'] = labels
+    correlations_df['Agglo_Group_1'] = correlations_df['RT_position_1'].map(lambda x: labels[int(x)])
+    correlations_df['Agglo_Group_2'] = correlations_df['RT_position_2'].map(lambda x: labels[int(x)])
+
+    print(feature_table[['Agglo_Group']])
+    print(correlations_df[['RT_position_1','RT_position_2','Correlations','Agglo_Group_1','Agglo_Group_2']])
+    feature_table.to_csv("PeakShape_df_with_agglomerative.csv", index=False)
+    
+    print(groups)
 
     return feature_table
 

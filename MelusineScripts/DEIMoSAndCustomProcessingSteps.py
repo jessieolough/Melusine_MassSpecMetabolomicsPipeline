@@ -120,7 +120,7 @@ rtalign_zipmap_mz_dt_rt_tol = [20E-6, 0.03, 2]
 
 #Peak Shape Correlation
 CorrelationMinimumNoDatapoints = 5
-PeakShapeCorr_CorrThres = 0.8
+PeakShapeCorr_CorrThres = 0.9
 
 #Agglomerative Clustering
 agglo_mergeFeatures_mz_dt_rt_tol = [2e-05, 0.03, 0.3]
