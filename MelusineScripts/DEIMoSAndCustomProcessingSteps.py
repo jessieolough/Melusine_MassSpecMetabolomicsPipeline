@@ -17,7 +17,7 @@ from numpy import trapz #Calculate area under line for Gap Filling
 from datetime import datetime #Get current date and time
 import warnings
 
-import DEIMoSFunctions_RedundantStepsRemoved
+import DEIMoSFunctions
 import CustomFunctions
 
 # Suppress FutureWarning messages
